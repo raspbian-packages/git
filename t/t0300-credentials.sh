@@ -303,4 +303,13 @@ test_expect_success 'url parser ignores embedded newlines' '
 	EOF
 '
 
+test_expect_success 'helpers can abort the process' '
+	test_must_fail git \
+		-c credential.helper="!f() { echo quit=1; }; f" \
+		-c credential.helper="verbatim foo bar" \
+		credential fill >stdout &&
+	>expect &&
+	test_cmp expect stdout
+'
+
 test_done
