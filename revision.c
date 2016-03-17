@@ -24,14 +24,20 @@ char *path_name(const struct name_path *path, const char *name)
 {
 	const struct name_path *p;
 	char *n, *m;
-	int nlen = strlen(name);
-	int len = nlen + 1;
+	size_t nlen = strlen(name);
+	size_t len = nlen + 1;
 
+	if (len >= INT_MAX)
+		goto error;
 	for (p = path; p; p = p->up) {
 		if (p->elem_len)
 			len += p->elem_len + 1;
+		if (len >= INT_MAX)
+			goto error;
 	}
 	n = xmalloc(len);
+	if (!n)
+		goto error;
 	m = n + len - (nlen + 1);
 	memcpy(m, name, nlen + 1);
 	for (p = path; p; p = p->up) {
@@ -42,6 +48,14 @@ char *path_name(const struct name_path *path, const char *name)
 		}
 	}
 	return n;
+
+ error:
+	/* FIXME: better to return an error, but the caller of this function
+	 * doesn't do any NULL-checks, so it's safer to exit forcibly
+	 */
+	exit(1);
+
+	return NULL;
 }
 
 static int show_path_component_truncated(FILE *out, const char *name, int len)
