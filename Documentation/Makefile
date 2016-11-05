@@ -340,6 +340,8 @@ user-manual.xml: user-manual.txt user-manual.conf
 	$(TXT_TO_XML) -d article -o $@+ $< && \
 	mv $@+ $@
 
+technical/api-index.html howto-index.html howto/%.html: ASCIIDOC_EXTRA += --attribute footer-style=none
+
 technical/api-index.txt: technical/api-index-skel.txt \
 	technical/api-index.sh $(patsubst %,%.txt,$(API_DOCS))
 	$(QUIET_GEN)cd technical && '$(SHELL_PATH_SQ)' ./api-index.sh
