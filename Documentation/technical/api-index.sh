@@ -20,6 +20,10 @@
 	sed -n -e '/^\/\/ table of contents end/,$p' "$skel"
 ) >api-index.txt+
 
+if [ "$SOURCE_DATE_EPOCH" ]; then
+    touch -d "@$SOURCE_DATE_EPOCH" api-index.txt+
+fi
+
 if test -f api-index.txt && cmp api-index.txt api-index.txt+ >/dev/null
 then
 	rm -f api-index.txt+
