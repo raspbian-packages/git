@@ -404,6 +404,7 @@ $(patsubst %.txt,%.texi,$(MAN_TXT)): %.texi : %.xml
 howto-index.txt: howto-index.sh $(wildcard howto/*.txt)
 	$(QUIET_GEN)$(RM) $@+ $@ && \
 	'$(SHELL_PATH_SQ)' ./howto-index.sh $(sort $(wildcard howto/*.txt)) >$@+ && \
+	$(if $(SOURCE_DATE_EPOCH),touch -d '@$(SOURCE_DATE_EPOCH)' $@+ &&) \
 	mv $@+ $@
 
 $(patsubst %,%.html,$(ARTICLES)) : %.html : %.txt
@@ -414,8 +415,10 @@ WEBDOC_DEST = /pub/software/scm/git/docs
 howto/%.html: ASCIIDOC_EXTRA += -a git-relative-html-prefix=../
 $(patsubst %.txt,%.html,$(wildcard howto/*.txt)): %.html : %.txt
 	$(QUIET_ASCIIDOC)$(RM) $@+ $@ && \
-	sed -e '1,/^$$/d' $< | \
-	$(TXT_TO_HTML) - >$@+ && \
+	sed -e '1,/^$$/d' $< > $<+ && \
+	$(if $(SOURCE_DATE_EPOCH),touch -d '@$(SOURCE_DATE_EPOCH)' $<+ &&) \
+	$(TXT_TO_HTML) -o $@+ $<+ && \
+	rm $<+ && \
 	mv $@+ $@
 
 install-webdoc : html
