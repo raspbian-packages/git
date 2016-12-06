@@ -1655,9 +1655,9 @@ static int http_request(const char *url,
  *
  * Note that this assumes a sane redirect scheme. It's entirely possible
  * in the example above to end up at a URL that does not even end in
- * "info/refs".  In such a case we simply punt, as there is not much we can
- * do (and such a scheme is unlikely to represent a real git repository,
- * which means we are likely about to abort anyway).
+ * "info/refs".  In such a case we die. There's not much we can do, such a
+ * scheme is unlikely to represent a real git repository, and failing to
+ * rewrite the base opens options for malicious redirects to do funny things.
  */
 static int update_url_from_redirect(struct strbuf *base,
 				    const char *asked,
@@ -1677,10 +1677,14 @@ static int update_url_from_redirect(struct strbuf *base,
 
 	if (got->len < tail_len ||
 	    strcmp(tail, got->buf + got->len - tail_len))
-		return 0; /* insane redirect scheme */
+		die(_("unable to update url base from redirection:\n"
+		      "  asked for: %s\n"
+		      "   redirect: %s"),
+		    asked, got->buf);
 
 	strbuf_reset(base);
 	strbuf_add(base, got->buf, got->len - tail_len);
+
 	return 1;
 }
 
