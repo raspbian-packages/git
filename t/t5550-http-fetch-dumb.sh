@@ -368,5 +368,14 @@ test_expect_success 'http-alternates cannot point at funny protocols' '
 		clone "$HTTPD_URL/dumb/evil.git" evil-file
 '
 
+test_expect_success 'can redirect through non-"info/refs?service=git-upload-pack" URL' '
+	git clone "$HTTPD_URL/redir-to/dumb/repo.git"
+'
+
+test_expect_success 'print HTTP error when any intermediate redirect throws error' '
+	test_must_fail git clone "$HTTPD_URL/redir-to/502" 2> stderr &&
+	test_i18ngrep "unable to access.*/redir-to/502" stderr
+'
+
 stop_httpd
 test_done
