@@ -269,22 +269,29 @@ static void process_alternates_response(void *callback_data)
 					okay = 1;
 				}
 			}
-			/* skip "objects\n" at end */
 			if (okay) {
 				struct strbuf target = STRBUF_INIT;
 				strbuf_add(&target, base, serverlen);
-				strbuf_add(&target, data + i, posn - i - 7);
-				warning("adding alternate object store: %s",
-					target.buf);
-				newalt = xmalloc(sizeof(*newalt));
-				newalt->next = NULL;
-				newalt->base = strbuf_detach(&target, NULL);
-				newalt->got_indices = 0;
-				newalt->packs = NULL;
+				strbuf_add(&target, data + i, posn - i);
 
-				while (tail->next != NULL)
-					tail = tail->next;
-				tail->next = newalt;
+				if (!strbuf_strip_suffix(&target, "objects")) {
+					warning("ignoring alternate that does"
+						" not end in 'objects': %s",
+						target.buf);
+					strbuf_release(&target);
+				} else {
+					warning("adding alternate object store: %s",
+						target.buf);
+					newalt = xmalloc(sizeof(*newalt));
+					newalt->next = NULL;
+					newalt->base = strbuf_detach(&target, NULL);
+					newalt->got_indices = 0;
+					newalt->packs = NULL;
+
+					while (tail->next != NULL)
+						tail = tail->next;
+					tail->next = newalt;
+				}
 			}
 		}
 		i = posn + 1;
