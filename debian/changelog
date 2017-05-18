@@ -1,4 +1,4 @@
-git (1:1.7.10.4-1+wheezy3+rpi1) wheezy-staging; urgency=medium
+git (1:1.7.10.4-1+wheezy4+rpi1) wheezy-staging; urgency=medium
 
   [changes brought forward from 1:1.7.10.4-1+wheezy1+rpi1 by Peter Michael Green <plugwash@raspbian.org> at Sun, 25 Nov 2012 13:13:58 +0000]
   * Disable testsuite
@@ -19,7 +19,17 @@ git (1:1.7.10.4-1+wheezy3+rpi1) wheezy-staging; urgency=medium
         with "svn update" hit an assertion failure (svn issue 4091).
   * Renable testsuite
 
- -- Raspbian forward porter <root@raspbian.org>  Mon, 21 Mar 2016 18:44:19 +0000
+ -- Raspbian forward porter <root@raspbian.org>  Thu, 18 May 2017 14:32:09 +0000
+
+git (1:1.7.10.4-1+wheezy4) wheezy-security; urgency=high
+
+  * Non-maintainer upload by the LTS team.
+  * Fix CVE-2017-8386:
+    Timo Schmid of ERNW GmbH discovered that the Git git-shell, a restricted
+    login shell for Git-only SSH access, allows a user to run an interactive
+    pager by causing it to spawn "git upload-pack --help".
+
+ -- Markus Koschany <apo@debian.org>  Wed, 10 May 2017 18:40:45 +0200
 
 git (1:1.7.10.4-1+wheezy3) wheezy-security; urgency=high
 
