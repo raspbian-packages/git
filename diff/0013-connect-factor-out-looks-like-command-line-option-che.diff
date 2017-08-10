@@ -1,0 +1,71 @@
+From 73f9dfd72e29b6fa0bf90b7b579690a4cf9b2470 Mon Sep 17 00:00:00 2001
+From: Jeff King <peff@peff.net>
+Date: Fri, 28 Jul 2017 15:25:45 -0400
+Subject: connect: factor out "looks like command line option" check
+
+commit 2491f77b90c2e5d47acbe7472c17e7de0af74f63 upstream.
+
+We reject hostnames that start with a dash because they may
+be confused for command-line options. Let's factor out that
+notion into a helper function, as we'll use it in more
+places. And while it's simple now, it's not clear if some
+systems might need more complex logic to handle all cases.
+
+Signed-off-by: Jeff King <peff@peff.net>
+Reviewed-by: Jonathan Nieder <jrnieder@gmail.com>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ cache.h   | 8 ++++++++
+ connect.c | 2 +-
+ path.c    | 5 +++++
+ 3 files changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/cache.h b/cache.h
+index a258d805cd..29c9caece6 100644
+--- a/cache.h
++++ b/cache.h
+@@ -851,6 +851,14 @@ char *strip_path_suffix(const char *path, const char *suffix);
+ int daemon_avoid_alias(const char *path);
+ extern int is_ntfs_dotgit(const char *name);
+ 
++/*
++ * Returns true iff "str" could be confused as a command-line option when
++ * passed to a sub-program like "ssh". Note that this has nothing to do with
++ * shell-quoting, which should be handled separately; we're assuming here that
++ * the string makes it verbatim to the sub-program.
++ */
++int looks_like_command_line_option(const char *str);
++
+ /* object replacement */
+ #define LOOKUP_REPLACE_OBJECT 1
+ extern void *read_sha1_file_extended(const unsigned char *sha1, enum object_type *type, unsigned long *size, unsigned flag);
+diff --git a/connect.c b/connect.c
+index 190ab28b62..3126ccff40 100644
+--- a/connect.c
++++ b/connect.c
+@@ -442,7 +442,7 @@ struct child_process *git_connect(int fd[2], const char *url,
+ 			get_host_and_port(&ssh_host, &port);
+ 			port = get_port_numeric(port);
+ 
+-			if (ssh_host[0] == '-')
++			if (looks_like_command_line_option(ssh_host))
+ 				die("strange hostname '%s' blocked", ssh_host);
+ 
+ 			if (!ssh) ssh = "ssh";
+diff --git a/path.c b/path.c
+index 757d0b057d..155f1ba4f4 100644
+--- a/path.c
++++ b/path.c
+@@ -854,3 +854,8 @@ int is_ntfs_dotgit(const char *name)
+ 			len = -1;
+ 		}
+ }
++
++int looks_like_command_line_option(const char *str)
++{
++	return str && str[0] == '-';
++}
+-- 
+2.14.0.434.g98096fd7a8
+
