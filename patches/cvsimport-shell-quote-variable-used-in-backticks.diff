@@ -1,0 +1,32 @@
+From b0872bfed2bebbd3b6d7d575f1524aecab4766bf Mon Sep 17 00:00:00 2001
+From: Jeff King <peff@peff.net>
+Date: Mon, 11 Sep 2017 10:24:26 -0400
+Subject: cvsimport: shell-quote variable used in backticks
+
+We run `git rev-parse` though the shell, and quote its
+argument only with single-quotes. This prevents most
+metacharacters from being a problem, but misses the obvious
+case when $name itself has single-quotes in it. We can fix
+this by applying the usual shell-quoting formula.
+
+Signed-off-by: Jeff King <peff@peff.net>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+---
+ git-cvsimport.perl | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/git-cvsimport.perl b/git-cvsimport.perl
+index 1e4e65a45d..36929921ea 100755
+--- a/git-cvsimport.perl
++++ b/git-cvsimport.perl
+@@ -642,6 +642,7 @@ sub is_sha1 {
+ 
+ sub get_headref ($) {
+ 	my $name = shift;
++	$name =~ s/'/'\\''/;
+ 	my $r = `git rev-parse --verify '$name' 2>/dev/null`;
+ 	return undef unless $? == 0;
+ 	chomp $r;
+-- 
+2.14.1.821.g8fa685d3b7
+
