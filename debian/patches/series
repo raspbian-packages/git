@@ -1,0 +1,16 @@
+0001-pre-rebase-hook-capture-documentation-in-a-here-docum.diff
+Normalize-generated-asciidoc-timestamps-with-SOURCE_D.diff
+git-gui-Sort-entries-in-optimized-tclIndex.diff
+xdiff-Do-not-enable-XDL_FAST_HASH-by-default.diff
+shell-disallow-repo-names-beginning-with-dash.patch
+connect-reject-ssh-hostname-that-begins-with-a-dash.diff
+t5813-add-test-for-hostname-starting-with-dash.diff
+connect-factor-out-looks-like-command-line-option-che.diff
+connect-reject-dashed-arguments-for-proxy-commands.diff
+connect-reject-paths-that-look-like-command-line-opti.diff
+cvsserver-move-safe_pipe_capture-to-the-main-package.diff
+cvsserver-use-safe_pipe_capture-instead-of-backticks.diff
+cvsserver-use-safe_pipe_capture-for-constant-commands.diff
+shell-drop-git-cvsserver-support-by-default.diff
+archimport-use-safe_pipe_capture-for-user-input.diff
+cvsimport-shell-quote-variable-used-in-backticks.diff
