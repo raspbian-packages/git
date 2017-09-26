@@ -1,0 +1,36 @@
+From a41e3597a3f5877aa86bb1b0296088bf4b31f6c0 Mon Sep 17 00:00:00 2001
+From: Anders Kaseorg <andersk@mit.edu>
+Date: Wed, 16 Nov 2016 16:37:17 -0500
+Subject: git-gui: Sort entries in optimized tclIndex
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+auto_mkindex expands wildcards in directory order, which depends on
+the underlying filesystem.  To improve build reproducibility, sort the
+list of *.tcl files in the Makefile.
+
+The unoptimized loading case was previously fixed in
+v2.11.0-rc0~31^2^2~14 “git-gui: sort entries in tclIndex”.
+
+Signed-off-by: Anders Kaseorg <andersk@mit.edu>
+---
+ git-gui/Makefile | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/git-gui/Makefile b/git-gui/Makefile
+index 918a8de369..f10caedaa7 100644
+--- a/git-gui/Makefile
++++ b/git-gui/Makefile
+@@ -254,7 +254,7 @@ $(ALL_MSGFILES): %.msg : %.po
+ lib/tclIndex: $(ALL_LIBFILES) GIT-GUI-VARS
+ 	$(QUIET_INDEX)if echo \
+ 	  $(foreach p,$(PRELOAD_FILES),source $p\;) \
+-	  auto_mkindex lib '*.tcl' \
++	  auto_mkindex lib $(patsubst lib/%,%,$(sort $(ALL_LIBFILES))) \
+ 	| $(TCL_PATH) $(QUIET_2DEVNULL); then : ok; \
+ 	else \
+ 	 echo >&2 "    * $(TCL_PATH) failed; using unoptimized loading"; \
+-- 
+2.14.1.992.g2c7b836f3a
+
