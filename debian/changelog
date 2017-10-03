@@ -1,4 +1,4 @@
-git (1:1.7.10.4-1+wheezy5+rpi1) wheezy-staging; urgency=medium
+git (1:1.7.10.4-1+wheezy6+rpi1) wheezy-staging; urgency=medium
 
   [changes brought forward from 1:1.7.10.4-1+wheezy1+rpi1 by Peter Michael Green <plugwash@raspbian.org> at Sun, 25 Nov 2012 13:13:58 +0000]
   * Disable testsuite
@@ -19,7 +19,18 @@ git (1:1.7.10.4-1+wheezy5+rpi1) wheezy-staging; urgency=medium
         with "svn update" hit an assertion failure (svn issue 4091).
   * Renable testsuite
 
- -- Raspbian forward porter <root@raspbian.org>  Fri, 01 Sep 2017 04:07:56 +0000
+ -- Raspbian forward porter <root@raspbian.org>  Tue, 03 Oct 2017 01:50:14 +0000
+
+git (1:1.7.10.4-1+wheezy6) wheezy-security; urgency=high
+
+  * Non-maintainer upload by the LTS Security Team.
+  * Fix CVE-2017-14867: Git uses unsafe Perl scripts to support
+    subcommands such as cvsserver, which allows attackers to execute
+    arbitrary OS commands via shell metacharacters in a module name. The
+    vulnerable code is reachable via git-shell even without CVS
+    support. (Closes: #876854)
+
+ -- Antoine Beaupré <anarcat@debian.org>  Mon, 02 Oct 2017 15:47:26 -0400
 
 git (1:1.7.10.4-1+wheezy5) wheezy-security; urgency=high
 
