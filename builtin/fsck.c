@@ -691,6 +691,9 @@ int cmd_fsck(int argc, const char **argv, const char *prefix)
 			count += p->num_objects;
 		}
 		stop_progress(&progress);
+
+		if (fsck_finish(&fsck_obj_options))
+			errors_found |= ERROR_OBJECT;
 	}
 
 	heads = 0;
