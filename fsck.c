@@ -10,6 +10,41 @@
 #include "utf8.h"
 #include "sha1-array.h"
 #include "decorate.h"
+#include "hashmap.h"
+
+struct oidhash_entry {
+	struct hashmap_entry ent;
+	struct object_id oid;
+};
+
+static int oidhash_hashcmp(const void *va, const void *vb,
+			   const void *vkey)
+{
+	const struct oidhash_entry *a = va, *b = vb;
+	const struct object_id *key = vkey;
+	return oidcmp(&a->oid, key ? key : &b->oid);
+}
+
+static struct hashmap gitmodules_found;
+static struct hashmap gitmodules_done;
+
+static void oidhash_insert(struct hashmap *h, const struct object_id *oid)
+{
+	struct oidhash_entry *e;
+
+	if (!h->tablesize)
+		hashmap_init(h, oidhash_hashcmp, 0);
+	e = xmalloc(sizeof(*e));
+	hashmap_entry_init(&e->ent, sha1hash(oid->hash));
+	oidcpy(&e->oid, oid);
+	hashmap_add(h, e);
+}
+
+static int oidhash_contains(struct hashmap *h, const struct object_id *oid)
+{
+	return h->tablesize &&
+		!!hashmap_get_from_hash(h, sha1hash(oid->hash), oid);
+}
 
 #define FSCK_FATAL -1
 #define FSCK_INFO -2
@@ -44,6 +79,7 @@
 	FUNC(MISSING_TAG_ENTRY, ERROR) \
 	FUNC(MISSING_TAG_OBJECT, ERROR) \
 	FUNC(MISSING_TREE, ERROR) \
+	FUNC(MISSING_TREE_OBJECT, ERROR) \
 	FUNC(MISSING_TYPE, ERROR) \
 	FUNC(MISSING_TYPE_ENTRY, ERROR) \
 	FUNC(MULTIPLE_AUTHORS, ERROR) \
@@ -51,6 +87,8 @@
 	FUNC(TREE_NOT_SORTED, ERROR) \
 	FUNC(UNKNOWN_TYPE, ERROR) \
 	FUNC(ZERO_PADDED_DATE, ERROR) \
+	FUNC(GITMODULES_MISSING, ERROR) \
+	FUNC(GITMODULES_BLOB, ERROR) \
 	/* warnings */ \
 	FUNC(BAD_FILEMODE, WARN) \
 	FUNC(EMPTY_NAME, WARN) \
@@ -558,6 +596,10 @@ static int fsck_tree(struct tree *item, struct fsck_options *options)
 		has_dotdot |= !strcmp(name, "..");
 		has_dotgit |= is_hfs_dotgit(name) || is_ntfs_dotgit(name);
 		has_zero_pad |= *(char *)desc.buffer == '0';
+
+		if (is_hfs_dotgitmodules(name) || is_ntfs_dotgitmodules(name))
+			oidhash_insert(&gitmodules_found, oid);
+
 		if (update_tree_entry_gently(&desc)) {
 			retval += report(options, &item->object, FSCK_MSG_BAD_TREE, "cannot be parsed as a tree");
 			break;
@@ -929,4 +971,52 @@ int fsck_error_function(struct fsck_options *o,
 	}
 	error("object %s: %s", describe_object(o, obj), message);
 	return 1;
+}
+
+int fsck_finish(struct fsck_options *options)
+{
+	int ret = 0;
+	struct hashmap_iter iter;
+	const struct oidhash_entry *e;
+
+	hashmap_iter_init(&gitmodules_found, &iter);
+	while ((e = hashmap_iter_next(&iter))) {
+		const struct object_id *oid = &e->oid;
+		struct blob *blob;
+		enum object_type type;
+		unsigned long size;
+		char *buf;
+
+		if (oidhash_contains(&gitmodules_done, oid))
+			continue;
+
+		blob = lookup_blob(oid->hash);
+		if (!blob) {
+			ret |= report(options, &blob->object,
+				      FSCK_MSG_GITMODULES_BLOB,
+				      "non-blob found at .gitmodules");
+			continue;
+		}
+
+		buf = read_sha1_file(oid->hash, &type, &size);
+		if (!buf) {
+			ret |= report(options, &blob->object,
+				      FSCK_MSG_GITMODULES_MISSING,
+				      "unable to read .gitmodules blob");
+			continue;
+		}
+
+		if (type == OBJ_BLOB)
+			ret |= fsck_blob(blob, buf, size, options);
+		else
+			ret |= report(options, &blob->object,
+				      FSCK_MSG_GITMODULES_BLOB,
+				      "non-blob found at .gitmodules");
+		free(buf);
+	}
+
+
+	hashmap_free(&gitmodules_found, 1);
+	hashmap_free(&gitmodules_done, 1);
+	return ret;
 }
