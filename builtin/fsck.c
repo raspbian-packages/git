@@ -318,7 +318,7 @@ static void check_connectivity(void)
 	}
 }
 
-static int fsck_obj(struct object *obj)
+static int fsck_obj(struct object *obj, void *buffer, unsigned long size)
 {
 	if (obj->flags & SEEN)
 		return 0;
@@ -330,7 +330,7 @@ static int fsck_obj(struct object *obj)
 
 	if (fsck_walk(obj, NULL, &fsck_obj_options))
 		objerror(obj, "broken links");
-	if (fsck_object(obj, NULL, 0, &fsck_obj_options))
+	if (fsck_object(obj, buffer, size, &fsck_obj_options))
 		return -1;
 
 	if (obj->type == OBJ_TREE) {
@@ -376,7 +376,7 @@ static int fsck_obj_buffer(const unsigned char *sha1, enum object_type type,
 		return error("%s: object corrupt or missing", sha1_to_hex(sha1));
 	}
 	obj->flags = HAS_OBJ;
-	return fsck_obj(obj);
+	return fsck_obj(obj, buffer, size);
 }
 
 static int default_refs;
@@ -476,43 +476,42 @@ static void get_default_heads(void)
 	}
 }
 
-static struct object *parse_loose_object(const unsigned char *sha1,
-					 const char *path)
-{
-	struct object *obj;
-	void *contents;
-	enum object_type type;
-	unsigned long size;
-	int eaten;
-
-	if (read_loose_object(path, sha1, &type, &size, &contents) < 0)
-		return NULL;
-
-	if (!contents && type != OBJ_BLOB)
-		die("BUG: read_loose_object streamed a non-blob");
-
-	obj = parse_object_buffer(sha1, type, size, contents, &eaten);
-
-	if (!eaten)
-		free(contents);
-	return obj;
-}
-
 static int fsck_loose(const unsigned char *sha1, const char *path, void *data)
 {
-	struct object *obj = parse_loose_object(sha1, path);
+	struct object *obj;
+	enum object_type type;
+	unsigned long size;
+	void *contents;
+	int eaten;
 
-	if (!obj) {
+	if (read_loose_object(path, sha1, &type, &size, &contents) < 0) {
 		errors_found |= ERROR_OBJECT;
 		error("%s: object corrupt or missing: %s",
 		      sha1_to_hex(sha1), path);
 		return 0; /* keep checking other objects */
 	}
 
-	obj->flags = HAS_OBJ;
-	if (fsck_obj(obj))
+	if (!contents && type != OBJ_BLOB)
+		die("BUG: read_loose_object streamed a non-blob");
+
+	obj = parse_object_buffer(sha1, type, size, contents, &eaten);
+
+	if (!obj) {
 		errors_found |= ERROR_OBJECT;
-	return 0;
+		error("%s: object could not be parsed: %s",
+		      sha1_to_hex(sha1), path);
+		if (!eaten)
+			free(contents);
+		return 0; /* keep checking other objects */
+	}
+
+	obj->flags = HAS_OBJ;
+	if (fsck_obj(obj, contents, size))
+		errors_found |= ERROR_OBJECT;
+
+	if (!eaten)
+		free(contents);
+	return 0; /* keep checking other objects, even if we saw an error */
 }
 
 static int fsck_cruft(const char *basename, const char *path, void *data)
