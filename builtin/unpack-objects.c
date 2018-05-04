@@ -567,8 +567,11 @@ int cmd_unpack_objects(int argc, const char **argv, const char *prefix)
 	unpack_all();
 	git_SHA1_Update(&ctx, buffer, offset);
 	git_SHA1_Final(sha1, &ctx);
-	if (strict)
+	if (strict) {
 		write_rest();
+		if (fsck_finish(&fsck_options))
+			die(_("fsck error in pack objects"));
+	}
 	if (hashcmp(fill(20), sha1))
 		die("final sha1 did not match");
 	use(20);
