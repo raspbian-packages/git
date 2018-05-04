@@ -829,6 +829,9 @@ static void sha1_object(const void *data, struct object_entry *obj_entry,
 				blob->object.flags |= FLAG_CHECKED;
 			else
 				die(_("invalid blob object %s"), sha1_to_hex(sha1));
+			if (do_fsck_object &&
+			    fsck_object(&blob->object, (void *)data, size, &fsck_options))
+				die(_("fsck error in packed object"));
 		} else {
 			struct object *obj;
 			int eaten;
@@ -1442,6 +1445,9 @@ static void final(const char *final_pack_name, const char *curr_pack_name,
 	} else
 		chmod(final_index_name, 0444);
 
+	if (do_fsck_object)
+		add_packed_git(final_index_name, strlen(final_index_name), 0);
+
 	if (!from_stdin) {
 		printf("%s\n", sha1_to_hex(sha1));
 	} else {
@@ -1785,6 +1791,10 @@ int cmd_index_pack(int argc, const char **argv, const char *prefix)
 		      pack_sha1);
 	else
 		close(input_fd);
+
+	if (do_fsck_object && fsck_finish(&fsck_options))
+		die(_("fsck error in pack objects"));
+
 	free(objects);
 	strbuf_release(&index_name_buf);
 	strbuf_release(&keep_name_buf);
