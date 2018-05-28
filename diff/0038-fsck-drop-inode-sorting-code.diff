@@ -1,0 +1,134 @@
+From c1d9be22ea36f8da9be5641a33d36bef31d24805 Mon Sep 17 00:00:00 2001
+From: Jeff King <peff@peff.net>
+Date: Thu, 24 Sep 2015 17:08:28 -0400
+Subject: fsck: drop inode-sorting code
+
+commit 144e4cf7092ee8cff44e9c7600aaa7515ad6a78f upstream.
+
+Fsck tries to access loose objects in order of inode number,
+with the hope that this would make cold cache access faster
+on a spinning disk. This dates back to 7e8c174 (fsck-cache:
+sort entries by inode number, 2005-05-02), which predates
+the invention of packfiles.
+
+These days, there's not much point in trying to optimize
+cold cache for a large number of loose objects. You are much
+better off to simply pack the objects, which will reduce the
+disk footprint _and_ provide better locality of data access.
+
+So while you can certainly construct pathological cases
+where this code might help, it is not worth the trouble
+anymore.
+
+Signed-off-by: Jeff King <peff@peff.net>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ builtin/fsck.c | 70 ++------------------------------------------------
+ 1 file changed, 2 insertions(+), 68 deletions(-)
+
+diff --git a/builtin/fsck.c b/builtin/fsck.c
+index 0928a98a71..08696ecd96 100644
+--- a/builtin/fsck.c
++++ b/builtin/fsck.c
+@@ -36,14 +36,6 @@ static int show_dangling = 1;
+ #define ERROR_REACHABLE 02
+ #define ERROR_PACK 04
+ 
+-#ifdef NO_D_INO_IN_DIRENT
+-#define SORT_DIRENT 0
+-#define DIRENT_SORT_HINT(de) 0
+-#else
+-#define SORT_DIRENT 1
+-#define DIRENT_SORT_HINT(de) ((de)->d_ino)
+-#endif
+-
+ static void objreport(struct object *obj, const char *severity,
+                       const char *err, va_list params)
+ {
+@@ -353,64 +345,6 @@ static int fsck_obj_buffer(const unsigned char *sha1, enum object_type type,
+ 	return fsck_obj(obj);
+ }
+ 
+-/*
+- * This is the sorting chunk size: make it reasonably
+- * big so that we can sort well..
+- */
+-#define MAX_SHA1_ENTRIES (1024)
+-
+-struct sha1_entry {
+-	unsigned long ino;
+-	unsigned char sha1[20];
+-};
+-
+-static struct {
+-	unsigned long nr;
+-	struct sha1_entry *entry[MAX_SHA1_ENTRIES];
+-} sha1_list;
+-
+-static int ino_compare(const void *_a, const void *_b)
+-{
+-	const struct sha1_entry *a = _a, *b = _b;
+-	unsigned long ino1 = a->ino, ino2 = b->ino;
+-	return ino1 < ino2 ? -1 : ino1 > ino2 ? 1 : 0;
+-}
+-
+-static void fsck_sha1_list(void)
+-{
+-	int i, nr = sha1_list.nr;
+-
+-	if (SORT_DIRENT)
+-		qsort(sha1_list.entry, nr,
+-		      sizeof(struct sha1_entry *), ino_compare);
+-	for (i = 0; i < nr; i++) {
+-		struct sha1_entry *entry = sha1_list.entry[i];
+-		unsigned char *sha1 = entry->sha1;
+-
+-		sha1_list.entry[i] = NULL;
+-		if (fsck_sha1(sha1))
+-			errors_found |= ERROR_OBJECT;
+-		free(entry);
+-	}
+-	sha1_list.nr = 0;
+-}
+-
+-static void add_sha1_list(unsigned char *sha1, unsigned long ino)
+-{
+-	struct sha1_entry *entry = xmalloc(sizeof(*entry));
+-	int nr;
+-
+-	entry->ino = ino;
+-	hashcpy(entry->sha1, sha1);
+-	nr = sha1_list.nr;
+-	if (nr == MAX_SHA1_ENTRIES) {
+-		fsck_sha1_list();
+-		nr = 0;
+-	}
+-	sha1_list.entry[nr] = entry;
+-	sha1_list.nr = ++nr;
+-}
+-
+ static inline int is_loose_object_file(struct dirent *de,
+ 				       char *name, unsigned char *sha1)
+ {
+@@ -439,7 +373,8 @@ static void fsck_dir(int i, char *path)
+ 		if (is_dot_or_dotdot(de->d_name))
+ 			continue;
+ 		if (is_loose_object_file(de, name, sha1)) {
+-			add_sha1_list(sha1, DIRENT_SORT_HINT(de));
++			if (fsck_sha1(sha1))
++				errors_found |= ERROR_OBJECT;
+ 			continue;
+ 		}
+ 		if (starts_with(de->d_name, "tmp_obj_"))
+@@ -545,7 +480,6 @@ static void fsck_object_dir(const char *path)
+ 		display_progress(progress, i+1);
+ 	}
+ 	stop_progress(&progress);
+-	fsck_sha1_list();
+ }
+ 
+ static int fsck_head_link(void)
+-- 
+2.17.0.921.gf22659ad46
+

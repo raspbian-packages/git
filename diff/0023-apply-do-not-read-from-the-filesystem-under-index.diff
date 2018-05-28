@@ -1,0 +1,37 @@
+From 75a70e2161e4c843bbc07100de286dc98c9a5b39 Mon Sep 17 00:00:00 2001
+From: Junio C Hamano <gitster@pobox.com>
+Date: Fri, 30 Jan 2015 15:15:59 -0800
+Subject: apply: do not read from the filesystem under --index
+
+commit 3c37a2e339e695c7cc41048fe0921cbc8b48b0f0 upstream.
+
+We currently read the preimage to apply a patch from the index only
+when the --cached option is given.  Do so also when the command is
+running under the --index option.  With --index, the index entry and
+the working tree file for a path that is involved in a patch must be
+identical, so this should not affect the result, but by reading from
+the index, we will get the protection to avoid reading an unintended
+path beyond a symbolic link automatically.
+
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ builtin/apply.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/builtin/apply.c b/builtin/apply.c
+index 76567411d5..55d632fed3 100644
+--- a/builtin/apply.c
++++ b/builtin/apply.c
+@@ -3201,7 +3201,7 @@ static int load_patch_target(struct strbuf *buf,
+ 			     const char *name,
+ 			     unsigned expected_mode)
+ {
+-	if (cached) {
++	if (cached || check_index) {
+ 		if (read_file_or_gitlink(ce, buf))
+ 			return error(_("read of %s failed"), name);
+ 	} else if (name) {
+-- 
+2.17.0.921.gf22659ad46
+
