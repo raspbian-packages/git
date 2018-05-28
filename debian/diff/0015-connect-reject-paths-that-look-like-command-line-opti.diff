@@ -1,0 +1,100 @@
+From 967325bc90215ea8108988a10c380a157fe2610d Mon Sep 17 00:00:00 2001
+From: Jeff King <peff@peff.net>
+Date: Fri, 28 Jul 2017 15:28:55 -0400
+Subject: connect: reject paths that look like command line options
+
+commit aeeb2d496859419ac1ba1da1162d6f3610f7f1f3 upstream.
+
+If we get a repo path like "-repo.git", we may try to invoke
+"git-upload-pack -repo.git". This is going to fail, since
+upload-pack will interpret it as a set of bogus options. But
+let's reject this before we even run the sub-program, since
+we would not want to allow any mischief with repo names that
+actually are real command-line options.
+
+You can still ask for such a path via git-daemon, but there's no
+security problem there, because git-daemon enters the repo itself
+and then passes "."  on the command line.
+
+Signed-off-by: Jeff King <peff@peff.net>
+Reviewed-by: Jonathan Nieder <jrnieder@gmail.com>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ connect.c                      |  3 +++
+ t/t5810-proto-disable-local.sh | 23 +++++++++++++++++++++++
+ t/t5813-proto-disable-ssh.sh   | 14 ++++++++++++++
+ 3 files changed, 40 insertions(+)
+
+diff --git a/connect.c b/connect.c
+index 3126ccff40..ba669729ed 100644
+--- a/connect.c
++++ b/connect.c
+@@ -428,6 +428,9 @@ struct child_process *git_connect(int fd[2], const char *url,
+ 	} else {
+ 		conn = xcalloc(1, sizeof(*conn));
+ 
++		if (looks_like_command_line_option(path))
++			die("strange pathname '%s' blocked", path);
++
+ 		strbuf_addstr(&cmd, prog);
+ 		strbuf_addch(&cmd, ' ');
+ 		sq_quote_buf(&cmd, path);
+diff --git a/t/t5810-proto-disable-local.sh b/t/t5810-proto-disable-local.sh
+index 563592d8a8..c1ef99b85c 100644
+--- a/t/t5810-proto-disable-local.sh
++++ b/t/t5810-proto-disable-local.sh
+@@ -11,4 +11,27 @@ test_expect_success 'setup repository to clone' '
+ test_proto "file://" file "file://$PWD"
+ test_proto "path" file .
+ 
++test_expect_success 'setup repo with dash' '
++	git init --bare repo.git &&
++	git push repo.git HEAD &&
++	mv repo.git "$PWD/-repo.git"
++'
++
++# This will fail even without our rejection because upload-pack will
++# complain about the bogus option. So let's make sure that GIT_TRACE
++# doesn't show us even running upload-pack.
++#
++# We must also be sure to use "fetch" and not "clone" here, as the latter
++# actually canonicalizes our input into an absolute path (which is fine
++# to allow).
++test_expect_success 'repo names starting with dash are rejected' '
++	rm -f trace.out &&
++	test_must_fail env GIT_TRACE="$PWD/trace.out" git fetch -- -repo.git &&
++	! grep upload-pack trace.out
++'
++
++test_expect_success 'full paths still work' '
++	git fetch "$PWD/-repo.git"
++'
++
+ test_done
+diff --git a/t/t5813-proto-disable-ssh.sh b/t/t5813-proto-disable-ssh.sh
+index 68befc459c..f78715a983 100644
+--- a/t/t5813-proto-disable-ssh.sh
++++ b/t/t5813-proto-disable-ssh.sh
+@@ -26,4 +26,18 @@ test_expect_success 'hostnames starting with dash are rejected' '
+ 	! grep ^ssh: stderr
+ '
+ 
++test_expect_success 'setup repo with dash' '
++	git init --bare remote/-repo.git &&
++	git push remote/-repo.git HEAD
++'
++
++test_expect_success 'repo names starting with dash are rejected' '
++	test_must_fail git clone remote:-repo.git dash-path 2>stderr &&
++	! grep ^ssh: stderr
++'
++
++test_expect_success 'full paths still work' '
++	git clone "remote:$PWD/remote/-repo.git" dash-path
++'
++
+ test_done
+-- 
+2.14.0.434.g98096fd7a8
+
