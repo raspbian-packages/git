@@ -1,0 +1,47 @@
+From 08652e5a54edc20f4308044bd7a98945b1dfc91d Mon Sep 17 00:00:00 2001
+From: Jeff King <peff@peff.net>
+Date: Sun, 13 May 2018 13:00:23 -0400
+Subject: verify_path: drop clever fallthrough
+
+commit e19e5e66d691bdeeeb5e0ed2ffcecdd7666b0d7b upstream.
+
+We check ".git" and ".." in the same switch statement, and
+fall through the cases to share the end-of-component check.
+While this saves us a line or two, it makes modifying the
+function much harder. Let's just write it out.
+
+Signed-off-by: Jeff King <peff@peff.net>
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ read-cache.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/read-cache.c b/read-cache.c
+index f042693856..aeb5c26bae 100644
+--- a/read-cache.c
++++ b/read-cache.c
+@@ -772,8 +772,7 @@ static int verify_dotfile(const char *rest)
+ 
+ 	switch (*rest) {
+ 	/*
+-	 * ".git" followed by  NUL or slash is bad. This
+-	 * shares the path end test with the ".." case.
++	 * ".git" followed by NUL or slash is bad.
+ 	 */
+ 	case 'g':
+ 	case 'G':
+@@ -781,8 +780,9 @@ static int verify_dotfile(const char *rest)
+ 			break;
+ 		if (rest[2] != 't' && rest[2] != 'T')
+ 			break;
+-		rest += 2;
+-	/* fallthrough */
++		if (rest[3] == '\0' || is_dir_sep(rest[3]))
++			return 0;
++		break;
+ 	case '.':
+ 		if (rest[1] == '\0' || is_dir_sep(rest[1]))
+ 			return 0;
+-- 
+2.17.0.921.gf22659ad46
+

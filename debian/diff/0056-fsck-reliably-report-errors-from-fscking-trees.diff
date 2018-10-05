@@ -1,0 +1,63 @@
+From 5317ea9a33513d5e4ca6a83abc7baae37d87bf51 Mon Sep 17 00:00:00 2001
+From: Pavel Cahyna <pcahyna@redhat.com>
+Date: Tue, 10 Jul 2018 17:00:19 +0200
+Subject: fsck: reliably report errors from fscking trees
+
+In 1f7a4837, a 2018-05-28 backport of v2.17.1~1^2 (fsck:complain when
+.gitmodules is a symlink, 2018-05-04), the backporter introduced a
+call
+
+	if (is_gitmodules(name) && S_ISLNK(mode)) {
+		retval += error_func(...
+
+They did not notice the retval is not initialized until later in
+fsck_tree:
+
+	retval = 0;
+
+which causes the non-zero error code to get lost.  Fixing this allows
+tightening the test script, too.
+
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ fsck.c                     | 3 +--
+ t/t7415-submodule-names.sh | 2 +-
+ 2 files changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/fsck.c b/fsck.c
+index 3bb73aa11a..788b4fd79c 100644
+--- a/fsck.c
++++ b/fsck.c
+@@ -175,7 +175,7 @@ static int verify_ordered(unsigned mode1, const char *name1, unsigned mode2, con
+ 
+ static int fsck_tree(struct tree *item, int strict, fsck_error error_func)
+ {
+-	int retval;
++	int retval = 0;
+ 	int has_null_sha1 = 0;
+ 	int has_full_path = 0;
+ 	int has_empty_name = 0;
+@@ -260,7 +260,6 @@ static int fsck_tree(struct tree *item, int strict, fsck_error error_func)
+ 		o_name = name;
+ 	}
+ 
+-	retval = 0;
+ 	if (has_null_sha1)
+ 		retval += error_func(&item->object, FSCK_WARN, "contains entries pointing to null sha1");
+ 	if (has_full_path)
+diff --git a/t/t7415-submodule-names.sh b/t/t7415-submodule-names.sh
+index fe8d0c1ad5..46f4b2014f 100755
+--- a/t/t7415-submodule-names.sh
++++ b/t/t7415-submodule-names.sh
+@@ -146,7 +146,7 @@ test_expect_success 'fsck detects symlinked .gitmodules file' '
+ 
+ 		# Check not only that fsck fails, but that it is due to the
+ 		# symlink detector.
+-		test_might_fail git fsck 2>output &&
++		test_must_fail git fsck 2>output &&
+ 		test_i18ngrep "is a symbolic link" output
+ 	)
+ '
+-- 
+2.19.0.605.g01d371f741
+

@@ -1,0 +1,107 @@
+From fe7c363e419027014ae7f3278766a26edda9863b Mon Sep 17 00:00:00 2001
+From: Jeff King <peff@peff.net>
+Date: Wed, 2 May 2018 17:25:27 -0400
+Subject: fsck: check .gitmodules content
+
+commit ed8b10f631c9a71df3351d46187bf7f3fa4f9b7e upstream.
+
+This patch detects and blocks submodule names which do not
+match the policy set forth in submodule-config. These should
+already be caught by the submodule code itself, but putting
+the check here means that newer versions of Git can protect
+older ones from malicious entries (e.g., a server with
+receive.fsckObjects will block the objects, protecting
+clients which fetch from it).
+
+As a side effect, this means fsck will also complain about
+.gitmodules files that cannot be parsed (or were larger than
+core.bigFileThreshold).
+
+[jn: backported by using git_config_from_buf instead of
+ git_config_from_mem for parsing and error_func instead of
+ report for reporting fsck errors]
+
+Signed-off-by: Jeff King <peff@peff.net>
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ fsck.c | 54 +++++++++++++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 53 insertions(+), 1 deletion(-)
+
+diff --git a/fsck.c b/fsck.c
+index 989e72408a..0e884c11e5 100644
+--- a/fsck.c
++++ b/fsck.c
+@@ -8,6 +8,7 @@
+ #include "fsck.h"
+ #include "utf8.h"
+ #include "hashmap.h"
++#include "submodule.h"
+ 
+ struct oidhash_entry {
+ 	struct hashmap_entry ent;
+@@ -405,10 +406,61 @@ static int fsck_tag(struct tag *tag, const char *data,
+ 	return 0;
+ }
+ 
++struct fsck_gitmodules_data {
++	struct object *obj;
++	fsck_error error_func;
++	int ret;
++};
++
++static int fsck_gitmodules_fn(const char *var, const char *value, void *vdata)
++{
++	struct fsck_gitmodules_data *data = vdata;
++	const char *subsection, *key;
++	int subsection_len;
++	char *name;
++
++	if (parse_config_key(var, "submodule", &subsection, &subsection_len, &key) < 0 ||
++	    !subsection)
++		return 0;
++
++	name = xmemdupz(subsection, subsection_len);
++	if (check_submodule_name(name) < 0)
++		data->ret += data->error_func(data->obj, FSCK_ERROR,
++					      "disallowed submodule name: %s",
++					      name);
++	free(name);
++
++	return 0;
++}
++
+ static int fsck_blob(struct blob *blob, const char *buf,
+ 		     unsigned long size, fsck_error error_func)
+ {
+-	return 0;
++	struct fsck_gitmodules_data data;
++
++	if (!oidhash_contains(&gitmodules_found, blob->object.sha1))
++		return 0;
++	oidhash_insert(&gitmodules_done, blob->object.sha1);
++
++	if (!buf) {
++		/*
++		 * A missing buffer here is a sign that the caller found the
++		 * blob too gigantic to load into memory. Let's just consider
++		 * that an error.
++		 */
++		return error_func(&blob->object, FSCK_ERROR,
++				  ".gitmodules too large to parse");
++	}
++
++	data.obj = &blob->object;
++	data.error_func = error_func;
++	data.ret = 0;
++	if (git_config_from_buf(fsck_gitmodules_fn, ".gitmodules",
++				buf, size, &data))
++		data.ret += error_func(&blob->object, FSCK_ERROR,
++				       "could not parse gitmodules blob");
++
++	return data.ret;
+ }
+ 
+ int fsck_object(struct object *obj, void *data, unsigned long size,
+-- 
+2.17.0.921.gf22659ad46
+
