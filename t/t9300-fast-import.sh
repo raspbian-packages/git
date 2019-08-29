@@ -2143,6 +2143,14 @@ test_expect_success 'R: abort on receiving feature after data command' '
 	test_must_fail git fast-import <input
 '
 
+test_expect_success 'R: import-marks features forbidden by default' '
+	>git.marks &&
+	echo "feature import-marks=git.marks" >input &&
+	test_must_fail git fast-import <input &&
+	echo "feature import-marks-if-exists=git.marks" >input &&
+	test_must_fail git fast-import <input
+'
+
 test_expect_success 'R: only one import-marks feature allowed per stream' '
 	>git.marks &&
 	>git2.marks &&
@@ -2151,7 +2159,7 @@ test_expect_success 'R: only one import-marks feature allowed per stream' '
 	feature import-marks=git2.marks
 	EOF
 
-	test_must_fail git fast-import <input
+	test_must_fail git fast-import --allow-unsafe-features <input
 '
 
 test_expect_success 'R: export-marks feature forbidden by default' '
@@ -2246,7 +2254,8 @@ test_expect_success 'R: --import-marks-if-exists' '
 test_expect_success 'R: feature import-marks-if-exists' '
 	rm -f io.marks &&
 
-	git fast-import --export-marks=io.marks <<-\EOF &&
+	git fast-import --export-marks=io.marks \
+			--allow-unsafe-features <<-\EOF &&
 	feature import-marks-if-exists=not_io.marks
 	EOF
 	test_must_be_empty io.marks &&
@@ -2257,7 +2266,8 @@ test_expect_success 'R: feature import-marks-if-exists' '
 	echo ":1 $blob" >expect &&
 	echo ":2 $blob" >>expect &&
 
-	git fast-import --export-marks=io.marks <<-\EOF &&
+	git fast-import --export-marks=io.marks \
+			--allow-unsafe-features <<-\EOF &&
 	feature import-marks-if-exists=io.marks
 	blob
 	mark :2
@@ -2270,7 +2280,8 @@ test_expect_success 'R: feature import-marks-if-exists' '
 	echo ":3 $blob" >>expect &&
 
 	git fast-import --import-marks=io.marks \
-			--export-marks=io.marks <<-\EOF &&
+			--export-marks=io.marks \
+			--allow-unsafe-features <<-\EOF &&
 	feature import-marks-if-exists=not_io.marks
 	blob
 	mark :3
@@ -2281,7 +2292,8 @@ test_expect_success 'R: feature import-marks-if-exists' '
 	test_cmp expect io.marks &&
 
 	git fast-import --import-marks-if-exists=not_io.marks \
-			--export-marks=io.marks <<-\EOF &&
+			--export-marks=io.marks \
+			--allow-unsafe-features <<-\EOF &&
 	feature import-marks-if-exists=io.marks
 	EOF
 	test_must_be_empty io.marks
