@@ -2144,6 +2144,8 @@ test_expect_success 'R: abort on receiving feature after data command' '
 '
 
 test_expect_success 'R: only one import-marks feature allowed per stream' '
+	>git.marks &&
+	>git2.marks &&
 	cat >input <<-EOF &&
 	feature import-marks=git.marks
 	feature import-marks=git2.marks
