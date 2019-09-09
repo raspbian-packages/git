@@ -71,7 +71,7 @@ enum hide_dotfiles_type hide_dotfiles = HIDE_DOTFILES_DOTGITONLY;
 int protect_hfs = PROTECT_HFS_DEFAULT;
 
 #ifndef PROTECT_NTFS_DEFAULT
-#define PROTECT_NTFS_DEFAULT 0
+#define PROTECT_NTFS_DEFAULT 1
 #endif
 int protect_ntfs = PROTECT_NTFS_DEFAULT;
 
