@@ -1054,7 +1054,7 @@ static const char *quote_arg_msvc(const char *arg)
 				p++;
 				len++;
 			}
-			if (*p == '"')
+			if (*p == '"' || !*p)
 				n += count*2 + 1;
 			continue;
 		}
@@ -1076,16 +1076,19 @@ static const char *quote_arg_msvc(const char *arg)
 				count++;
 				*d++ = *arg++;
 			}
-			if (*arg == '"') {
+			if (*arg == '"' || !*arg) {
 				while (count-- > 0)
 					*d++ = '\\';
+				/* don't escape the surrounding end quote */
+				if (!*arg)
+					break;
 				*d++ = '\\';
 			}
 		}
 		*d++ = *arg++;
 	}
 	*d++ = '"';
-	*d++ = 0;
+	*d++ = '\0';
 	return q;
 }
 
