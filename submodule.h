@@ -69,6 +69,11 @@ void connect_work_tree_and_git_dir(const char *work_tree, const char *git_dir);
 int parallel_submodules(void);
 
 /*
+ * Make sure that no submodule's git dir is nested in a sibling submodule's.
+ */
+int validate_submodule_git_dir(char *git_dir, const char *submodule_name);
+
+/*
  * Prepare the "env_array" parameter of a "struct child_process" for executing
  * a submodule by clearing any repo-specific envirionment variables, but
  * retaining any config in the environment.
