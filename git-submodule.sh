@@ -242,6 +242,11 @@ Use -f if you really want to add it." >&2
 		fi
 
 	else
+		sm_gitdir=".git/modules/$sm_name"
+		if ! git submodule--helper validate-git-dir "$sm_gitdir" "$sm_name"
+		then
+			die "$(eval_gettextln "refusing to create/use '\$sm_gitdir' in another submodule's git dir")"
+		fi
 		if test -d ".git/modules/$sm_name"
 		then
 			if test -z "$force"

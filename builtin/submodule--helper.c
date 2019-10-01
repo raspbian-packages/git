@@ -638,6 +638,10 @@ static int module_clone(int argc, const char **argv, const char *prefix)
 	} else
 		path = xstrdup(path);
 
+	if (validate_submodule_git_dir(sm_gitdir, name) < 0)
+		die(_("refusing to create/use '%s' in another submodule's "
+			"git dir"), sm_gitdir);
+
 	if (!file_exists(sm_gitdir)) {
 		if (safe_create_leading_directories_const(sm_gitdir) < 0)
 			die(_("could not create directory '%s'"), sm_gitdir);
@@ -1111,6 +1115,25 @@ static int check_name(int argc, const char **argv, const char *prefix)
 	return 0;
 }
 
+/*
+ * Exit non-zero if the proposed submodule repository path is inside
+ * another submodules' git dir.
+ */
+static int validate_git_dir(int argc, const char **argv, const char *prefix)
+{
+	char *sm_gitdir;
+
+	if (argc != 3)
+		usage("git submodule--helper validate-git-dir <path> <name>");
+	sm_gitdir = xstrdup(argv[1]);
+	if (validate_submodule_git_dir(sm_gitdir, argv[2]) < 0) {
+		free(sm_gitdir);
+		return 1;
+	}
+	free(sm_gitdir);
+	return 0;
+}
+
 struct cmd_struct {
 	const char *cmd;
 	int (*fn)(int, const char **, const char *);
@@ -1127,6 +1150,7 @@ static struct cmd_struct commands[] = {
 	{"init", module_init},
 	{"remote-branch", resolve_remote_submodule_branch},
 	{"check-name", check_name},
+	{"validate-git-dir", validate_git_dir},
 };
 
 int cmd_submodule__helper(int argc, const char **argv, const char *prefix)
