@@ -95,6 +95,7 @@ static int oidhash_contains(struct hashmap *h, const struct object_id *oid)
 	FUNC(GITMODULES_SYMLINK, ERROR) \
 	FUNC(GITMODULES_URL, ERROR) \
 	FUNC(GITMODULES_PATH, ERROR) \
+	FUNC(GITMODULES_UPDATE, ERROR) \
 	/* warnings */ \
 	FUNC(BAD_FILEMODE, WARN) \
 	FUNC(EMPTY_NAME, WARN) \
@@ -997,6 +998,11 @@ static int fsck_gitmodules_fn(const char *var, const char *value, void *vdata)
 		data->ret |= report(data->options, data->obj,
 				    FSCK_MSG_GITMODULES_PATH,
 				    "disallowed submodule path: %s",
+				    value);
+	if (!strcmp(key, "update") && value && *value == '!')
+		data->ret |= report(data->options, data->obj,
+				    FSCK_MSG_GITMODULES_UPDATE,
+				    "disallowed submodule update setting: %s",
 				    value);
 	free(name);
 
