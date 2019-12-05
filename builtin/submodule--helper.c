@@ -381,9 +381,7 @@ static void init_submodule(const char *path, const char *prefix, int quiet)
 	if (git_config_get_string(sb.buf, &upd) &&
 	    sub->update_strategy.type != SM_UPDATE_UNSPECIFIED) {
 		if (sub->update_strategy.type == SM_UPDATE_COMMAND) {
-			fprintf(stderr, _("warning: command update mode suggested for submodule '%s'\n"),
-				sub->name);
-			upd = xstrdup("none");
+			die(_("invalid value for %s"), sb.buf);
 		} else
 			upd = xstrdup(submodule_strategy_to_string(&sub->update_strategy));
 
