@@ -1,0 +1,137 @@
+From 301307952288e563850ae8216a36d689837463e5 Mon Sep 17 00:00:00 2001
+From: Jonathan Nieder <jrnieder@gmail.com>
+Date: Thu, 5 Dec 2019 01:28:28 -0800
+Subject: submodule: reject submodule.update = !command in .gitmodules
+
+commit e904deb89d9a9669a76a426182506a084d3f6308 upstream.
+
+Since ac1fbbda2013 (submodule: do not copy unknown update mode from
+.gitmodules, 2013-12-02), Git has been careful to avoid copying
+
+	[submodule "foo"]
+		update = !run an arbitrary scary command
+
+from .gitmodules to a repository's local config, copying in the
+setting 'update = none' instead.  The gitmodules(5) manpage documents
+the intention:
+
+	The !command form is intentionally ignored here for security
+	reasons
+
+Unfortunately, starting with v2.20.0-rc0 (which integrated ee69b2a9
+(submodule--helper: introduce new update-module-mode helper,
+2018-08-13, first released in v2.20.0-rc0)), there are scenarios where
+we *don't* ignore it: if the config store contains no
+submodule.foo.update setting, the submodule-config API falls back to
+reading .gitmodules and the repository-supplied !command gets run
+after all.
+
+This was part of a general change over time in submodule support to
+read more directly from .gitmodules, since unlike .git/config it
+allows a project to change values between branches and over time
+(while still allowing .git/config to override things).  But it was
+never intended to apply to this kind of dangerous configuration.
+
+The behavior change was not advertised in ee69b2a9's commit message
+and was missed in review.
+
+Let's take the opportunity to make the protection more robust, even in
+Git versions that are technically not affected: instead of quietly
+converting 'update = !command' to 'update = none', noisily treat it as
+an error.  Allowing the setting but treating it as meaning something
+else was just confusing; users are better served by seeing the error
+sooner.  Forbidding the construct makes the semantics simpler and
+means we can check for it in fsck (in a separate patch).
+
+As a result, the submodule-config API cannot read this value from
+.gitmodules under any circumstance, and we can declare with confidence
+
+	For security reasons, the '!command' form is not accepted
+	here.
+
+[jn: backported to 2.11.y:
+ - allow submodule-config to read !command after all, since
+   v2.15.0-rc0~120^2~10 (submodule--helper: don't overlay config in
+   update-clone, 2017-08-03) hasn't happened yet
+ - move the code to error out when "git submodule init" encounters
+   !command in .gitmodules to module_init()
+ - cmd_update in git-submodule.sh is responsible for reading the
+   update strategy since v2.20.0-rc0~247^2 (submodule--helper:
+   introduce update-module-mode, 2018-08-13) hasn't happened yet.
+   cmd_update checks config directly and does not read .gitmodules,
+   so we don't have to change it.  Accordingly, t7406 also does
+   not need to change its expectation from ignoring to rejecting
+   commands from .gitmodules.]
+
+Reported-by: Joern Schneeweisz <jschneeweisz@gitlab.com>
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+Signed-off-by: Johannes Schindelin <Johannes.Schindelin@gmx.de>
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ Documentation/gitmodules.txt |  5 ++---
+ builtin/submodule--helper.c  |  4 +---
+ t/t7406-submodule-update.sh  | 10 ++++++----
+ 3 files changed, 9 insertions(+), 10 deletions(-)
+
+diff --git a/Documentation/gitmodules.txt b/Documentation/gitmodules.txt
+index 8f7c50f330..0c10fb01c1 100644
+--- a/Documentation/gitmodules.txt
++++ b/Documentation/gitmodules.txt
+@@ -44,9 +44,8 @@ submodule.<name>.update::
+ 	submodule init` to initialize the configuration variable of
+ 	the same name. Allowed values here are 'checkout', 'rebase',
+ 	'merge' or 'none'. See description of 'update' command in
+-	linkgit:git-submodule[1] for their meaning. Note that the
+-	'!command' form is intentionally ignored here for security
+-	reasons.
++	linkgit:git-submodule[1] for their meaning. For security
++	reasons, the '!command' form is not accepted here.
+ 
+ submodule.<name>.branch::
+ 	A remote branch name for tracking updates in the upstream submodule.
+diff --git a/builtin/submodule--helper.c b/builtin/submodule--helper.c
+index 6f33a665df..68c84a10a4 100644
+--- a/builtin/submodule--helper.c
++++ b/builtin/submodule--helper.c
+@@ -381,9 +381,7 @@ static void init_submodule(const char *path, const char *prefix, int quiet)
+ 	if (git_config_get_string(sb.buf, &upd) &&
+ 	    sub->update_strategy.type != SM_UPDATE_UNSPECIFIED) {
+ 		if (sub->update_strategy.type == SM_UPDATE_COMMAND) {
+-			fprintf(stderr, _("warning: command update mode suggested for submodule '%s'\n"),
+-				sub->name);
+-			upd = xstrdup("none");
++			die(_("invalid value for %s"), sb.buf);
+ 		} else
+ 			upd = xstrdup(submodule_strategy_to_string(&sub->update_strategy));
+ 
+diff --git a/t/t7406-submodule-update.sh b/t/t7406-submodule-update.sh
+index b957b97370..3781809bd6 100755
+--- a/t/t7406-submodule-update.sh
++++ b/t/t7406-submodule-update.sh
+@@ -453,6 +453,9 @@ test_expect_success 'recursive submodule update - command in .git/config catches
+ '
+ 
+ test_expect_success 'submodule init does not copy command into .git/config' '
++	test_when_finished "git -C super update-index --force-remove submodule1" &&
++	test_when_finished git config -f super/.gitmodules \
++		--remove-section submodule.submodule1 &&
+ 	(cd super &&
+ 	 H=$(git ls-files -s submodule | cut -d" " -f2) &&
+ 	 mkdir submodule1 &&
+@@ -460,10 +463,9 @@ test_expect_success 'submodule init does not copy command into .git/config' '
+ 	 git config -f .gitmodules submodule.submodule1.path submodule1 &&
+ 	 git config -f .gitmodules submodule.submodule1.url ../submodule &&
+ 	 git config -f .gitmodules submodule.submodule1.update !false &&
+-	 git submodule init submodule1 &&
+-	 echo "none" >expect &&
+-	 git config submodule.submodule1.update >actual &&
+-	 test_cmp expect actual
++	 test_must_fail git submodule init submodule1 &&
++	 test_expect_code 1 git config submodule.submodule1.update >actual &&
++	 test_must_be_empty actual
+ 	)
+ '
+ 
+-- 
+2.24.0.393.g34dc348eaf
+
