@@ -1,0 +1,124 @@
+From 07e1f99632d796bbf9f4a5cd6b59cc12302c8479 Mon Sep 17 00:00:00 2001
+From: Jeff King <peff@peff.net>
+Date: Tue, 23 Dec 2014 03:45:36 -0500
+Subject: is_hfs_dotgit: loosen over-eager match of \u{..47}
+
+commit 6aaf956b08cfab2dcaa1a1afe4192390d0ef14fd upstream.
+
+Our is_hfs_dotgit function relies on the hackily-implemented
+next_hfs_char to give us the next character that an HFS+
+filename comparison would look at. It's hacky because it
+doesn't implement the full case-folding table of HFS+; it
+gives us just enough to see if the path matches ".git".
+
+At the end of next_hfs_char, we use tolower() to convert our
+32-bit code point to lowercase. Our tolower() implementation
+only takes an 8-bit char, though; it throws away the upper
+24 bits. This means we can't have any false negatives for
+is_hfs_dotgit. We only care about matching 7-bit ASCII
+characters in ".git", and we will correctly process 'G' or
+'g'.
+
+However, we _can_ have false positives. Because we throw
+away the upper bits, code point \u{0147} (for example) will
+look like 'G' and get downcased to 'g'. It's not known
+whether a sequence of code points whose truncation ends up
+as ".git" is meaningful in any language, but it does not
+hurt to be more accurate here. We can just pass out the full
+32-bit code point, and compare it manually to the upper and
+lowercase characters we care about.
+
+Signed-off-by: Jeff King <peff@peff.net>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ t/t1450-fsck.sh | 15 +++++++++++++++
+ utf8.c          | 32 ++++++++++++++++++++------------
+ 2 files changed, 35 insertions(+), 12 deletions(-)
+
+diff --git a/t/t1450-fsck.sh b/t/t1450-fsck.sh
+index 426f753fe3..6475f10bc5 100755
+--- a/t/t1450-fsck.sh
++++ b/t/t1450-fsck.sh
+@@ -307,6 +307,21 @@ dot-backslash-case .\\\\.GIT\\\\foobar
+ dotgit-case-backslash .git\\\\foobar
+ EOF
+ 
++test_expect_success 'fsck allows .Ňit' '
++	(
++		git init not-dotgit &&
++		cd not-dotgit &&
++		echo content >file &&
++		git add file &&
++		git commit -m base &&
++		blob=$(git rev-parse :file) &&
++		printf "100644 blob $blob\t.\\305\\207it" >tree &&
++		tree=$(git mktree <tree) &&
++		git fsck 2>err &&
++		test_line_count = 0 err
++	)
++'
++
+ # create a static test repo which is broken by omitting
+ # one particular object ($1, which is looked up via rev-parse
+ # in the new repository).
+diff --git a/utf8.c b/utf8.c
+index 3b77e97658..7d2d6a0117 100644
+--- a/utf8.c
++++ b/utf8.c
+@@ -567,8 +567,8 @@ int mbs_chrlen(const char **text, size_t *remainder_p, const char *encoding)
+ }
+ 
+ /*
+- * Pick the next char from the stream, folding as an HFS+ filename comparison
+- * would. Note that this is _not_ complete by any means. It's just enough
++ * Pick the next char from the stream, ignoring codepoints an HFS+ would.
++ * Note that this is _not_ complete by any means. It's just enough
+  * to make is_hfs_dotgit() work, and should not be used otherwise.
+  */
+ static ucs_char_t next_hfs_char(const char **in)
+@@ -605,12 +605,7 @@ static ucs_char_t next_hfs_char(const char **in)
+ 			continue;
+ 		}
+ 
+-		/*
+-		 * there's a great deal of other case-folding that occurs,
+-		 * but this is enough to catch anything that will convert
+-		 * to ".git"
+-		 */
+-		return tolower(out);
++		return out;
+ 	}
+ }
+ 
+@@ -618,10 +613,23 @@ int is_hfs_dotgit(const char *path)
+ {
+ 	ucs_char_t c;
+ 
+-	if (next_hfs_char(&path) != '.' ||
+-	    next_hfs_char(&path) != 'g' ||
+-	    next_hfs_char(&path) != 'i' ||
+-	    next_hfs_char(&path) != 't')
++	c = next_hfs_char(&path);
++	if (c != '.')
++		return 0;
++	c = next_hfs_char(&path);
++
++	/*
++	 * there's a great deal of other case-folding that occurs
++	 * in HFS+, but this is enough to catch anything that will
++	 * convert to ".git"
++	 */
++	if (c != 'g' && c != 'G')
++		return 0;
++	c = next_hfs_char(&path);
++	if (c != 'i' && c != 'I')
++		return 0;
++	c = next_hfs_char(&path);
++	if (c != 't' && c != 'T')
+ 		return 0;
+ 	c = next_hfs_char(&path);
+ 	if (c && !is_dir_sep(c))
+-- 
+2.17.0.921.gf22659ad46
+

@@ -1,0 +1,36 @@
+From 02a41fad14e81655c5b2bd8fdcb3c517076fbf67 Mon Sep 17 00:00:00 2001
+From: Jeff King <peff@peff.net>
+Date: Tue, 15 May 2018 09:56:50 -0400
+Subject: verify_dotfile: mention case-insensitivity in comment
+
+commit 641084b618ddbe099f0992161988c3e479ae848b upstream.
+
+We're more restrictive than we need to be in matching ".GIT"
+on case-sensitive filesystems; let's make a note that this
+is intentional.
+
+Signed-off-by: Jeff King <peff@peff.net>
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ read-cache.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/read-cache.c b/read-cache.c
+index aeb5c26bae..20a2598938 100644
+--- a/read-cache.c
++++ b/read-cache.c
+@@ -772,7 +772,10 @@ static int verify_dotfile(const char *rest)
+ 
+ 	switch (*rest) {
+ 	/*
+-	 * ".git" followed by NUL or slash is bad.
++	 * ".git" followed by NUL or slash is bad. Note that we match
++	 * case-insensitively here, even if ignore_case is not set.
++	 * This outlaws ".GIT" everywhere out of an abundance of caution,
++	 * since there's really no good reason to allow it.
+ 	 */
+ 	case 'g':
+ 	case 'G':
+-- 
+2.17.0.921.gf22659ad46
+
