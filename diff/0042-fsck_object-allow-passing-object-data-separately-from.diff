@@ -1,0 +1,225 @@
+From 8efb78bf5d85e8fe95c20a5adba52f7bb37ee67e Mon Sep 17 00:00:00 2001
+From: Johannes Schindelin <johannes.schindelin@gmx.de>
+Date: Wed, 10 Sep 2014 15:52:51 +0200
+Subject: fsck_object(): allow passing object data separately from the object
+ itself
+
+commits 90a398bbd72477d5d228818db5665fdfcf13431b and
+4d0d89755e82c40df88cf94d84031978f8eac827 upstream.
+
+When fsck'ing an incoming pack, we need to fsck objects that cannot be
+read via read_sha1_file() because they are not local yet (and might even
+be rejected if transfer.fsckobjects is set to 'true').
+
+For commits, there is a hack in place: we basically cache commit
+objects' buffers anyway, but the same is not true, say, for tag objects.
+
+By refactoring fsck_object() to take the object buffer and size as
+optional arguments -- optional, because we still fall back to the
+previous method to look at the cached commit objects if the caller
+passes NULL -- we prepare the machinery for the upcoming handling of tag
+objects.
+
+The assumption that such buffers are inherently NUL terminated is now
+wrong, so make sure that there is at least an empty line in the buffer.
+That way, our checks would fail if the empty line was encountered
+prematurely, and consequently we can get away with the current string
+comparisons even with non-NUL-terminated buffers are passed to
+fsck_object().
+
+Signed-off-by: Johannes Schindelin <johannes.schindelin@gmx.de>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ builtin/fsck.c           |  2 +-
+ builtin/index-pack.c     |  3 ++-
+ builtin/unpack-objects.c | 14 ++++++++----
+ fsck.c                   | 47 ++++++++++++++++++++++++++++++++--------
+ fsck.h                   |  4 +++-
+ 5 files changed, 54 insertions(+), 16 deletions(-)
+
+diff --git a/builtin/fsck.c b/builtin/fsck.c
+index d2bb90ed99..c8885bcd43 100644
+--- a/builtin/fsck.c
++++ b/builtin/fsck.c
+@@ -290,7 +290,7 @@ static int fsck_obj(struct object *obj)
+ 
+ 	if (fsck_walk(obj, mark_used, NULL))
+ 		objerror(obj, "broken links");
+-	if (fsck_object(obj, check_strict, fsck_error_func))
++	if (fsck_object(obj, NULL, 0, check_strict, fsck_error_func))
+ 		return -1;
+ 
+ 	if (obj->type == OBJ_TREE) {
+diff --git a/builtin/index-pack.c b/builtin/index-pack.c
+index 9f8c7643e8..b77a98edbf 100644
+--- a/builtin/index-pack.c
++++ b/builtin/index-pack.c
+@@ -779,7 +779,8 @@ static void sha1_object(const void *data, struct object_entry *obj_entry,
+ 			if (!obj)
+ 				die(_("invalid %s"), typename(type));
+ 			if (do_fsck_object &&
+-			    fsck_object(obj, 1, fsck_error_function))
++			    fsck_object(obj, buf, size, 1,
++				    fsck_error_function))
+ 				die(_("fsck error in packed object"));
+ 			if (fsck_walk(obj, mark_link, NULL))
+ 				die(_("Not all child objects of %s are reachable"), sha1_to_hex(obj->sha1));
+diff --git a/builtin/unpack-objects.c b/builtin/unpack-objects.c
+index 594810a09c..0713ef619c 100644
+--- a/builtin/unpack-objects.c
++++ b/builtin/unpack-objects.c
+@@ -164,10 +164,10 @@ static unsigned nr_objects;
+  * Called only from check_object() after it verified this object
+  * is Ok.
+  */
+-static void write_cached_object(struct object *obj)
++static void write_cached_object(struct object *obj, struct obj_buffer *obj_buf)
+ {
+ 	unsigned char sha1[20];
+-	struct obj_buffer *obj_buf = lookup_object_buffer(obj);
++
+ 	if (write_sha1_file(obj_buf->buffer, obj_buf->size, typename(obj->type), sha1) < 0)
+ 		die("failed to write object %s", sha1_to_hex(obj->sha1));
+ 	obj->flags |= FLAG_WRITTEN;
+@@ -180,6 +180,8 @@ static void write_cached_object(struct object *obj)
+  */
+ static int check_object(struct object *obj, int type, void *data)
+ {
++	struct obj_buffer *obj_buf;
++
+ 	if (!obj)
+ 		return 1;
+ 
+@@ -198,11 +200,15 @@ static int check_object(struct object *obj, int type, void *data)
+ 		return 0;
+ 	}
+ 
+-	if (fsck_object(obj, 1, fsck_error_function))
++	obj_buf = lookup_object_buffer(obj);
++	if (!obj_buf)
++		die("Whoops! Cannot find object '%s'", sha1_to_hex(obj->sha1));
++	if (fsck_object(obj, obj_buf->buffer, obj_buf->size, 1,
++			fsck_error_function))
+ 		die("fsck error in packed object");
+ 	if (fsck_walk(obj, check_object, NULL))
+ 		die("Error on reachable objects of %s", sha1_to_hex(obj->sha1));
+-	write_cached_object(obj);
++	write_cached_object(obj, obj_buf);
+ 	return 0;
+ }
+ 
+diff --git a/fsck.c b/fsck.c
+index 99ed64f004..40af0de466 100644
+--- a/fsck.c
++++ b/fsck.c
+@@ -238,6 +238,26 @@ static int fsck_tree(struct tree *item, int strict, fsck_error error_func)
+ 	return retval;
+ }
+ 
++static int require_end_of_header(const void *data, unsigned long size,
++	struct object *obj, fsck_error error_func)
++{
++	const char *buffer = (const char *)data;
++	unsigned long i;
++
++	for (i = 0; i < size; i++) {
++		switch (buffer[i]) {
++		case '\0':
++			return error_func(obj, FSCK_ERROR,
++				"unterminated header: NUL at offset %d", i);
++		case '\n':
++			if (i + 1 < size && buffer[i + 1] == '\n')
++				return 0;
++		}
++	}
++
++	return error_func(obj, FSCK_ERROR, "unterminated header");
++}
++
+ static int fsck_ident(const char **ident, struct object *obj, fsck_error error_func)
+ {
+ 	char *end;
+@@ -278,13 +298,16 @@ static int fsck_ident(const char **ident, struct object *obj, fsck_error error_f
+ }
+ 
+ static int fsck_commit_buffer(struct commit *commit, const char *buffer,
+-			      fsck_error error_func)
++	unsigned long size, fsck_error error_func)
+ {
+ 	unsigned char tree_sha1[20], sha1[20];
+ 	struct commit_graft *graft;
+ 	unsigned parent_count, parent_line_count = 0;
+ 	int err;
+ 
++	if (require_end_of_header(buffer, size, &commit->object, error_func))
++		return -1;
++
+ 	if (!skip_prefix(buffer, "tree ", &buffer))
+ 		return error_func(&commit->object, FSCK_ERROR, "invalid format - expected 'tree' line");
+ 	if (get_sha1_hex(buffer, tree_sha1) || buffer[40] != '\n')
+@@ -323,15 +346,18 @@ static int fsck_commit_buffer(struct commit *commit, const char *buffer,
+ 	return 0;
+ }
+ 
+-static int fsck_commit(struct commit *commit, fsck_error error_func)
++static int fsck_commit(struct commit *commit, const char *data,
++	unsigned long size, fsck_error error_func)
+ {
+-	const char *buffer = get_commit_buffer(commit, NULL);
+-	int ret = fsck_commit_buffer(commit, buffer, error_func);
+-	unuse_commit_buffer(commit, buffer);
++	const char *buffer = data ?  data : get_commit_buffer(commit, &size);
++	int ret = fsck_commit_buffer(commit, buffer, size, error_func);
++	if (!data)
++		unuse_commit_buffer(commit, buffer);
+ 	return ret;
+ }
+ 
+-static int fsck_tag(struct tag *tag, fsck_error error_func)
++static int fsck_tag(struct tag *tag, const char *data,
++	unsigned long size, fsck_error error_func)
+ {
+ 	struct object *tagged = tag->tagged;
+ 
+@@ -340,7 +366,8 @@ static int fsck_tag(struct tag *tag, fsck_error error_func)
+ 	return 0;
+ }
+ 
+-int fsck_object(struct object *obj, int strict, fsck_error error_func)
++int fsck_object(struct object *obj, void *data, unsigned long size,
++	int strict, fsck_error error_func)
+ {
+ 	if (!obj)
+ 		return error_func(obj, FSCK_ERROR, "no valid object to fsck");
+@@ -350,9 +377,11 @@ int fsck_object(struct object *obj, int strict, fsck_error error_func)
+ 	if (obj->type == OBJ_TREE)
+ 		return fsck_tree((struct tree *) obj, strict, error_func);
+ 	if (obj->type == OBJ_COMMIT)
+-		return fsck_commit((struct commit *) obj, error_func);
++		return fsck_commit((struct commit *) obj, (const char *) data,
++			size, error_func);
+ 	if (obj->type == OBJ_TAG)
+-		return fsck_tag((struct tag *) obj, error_func);
++		return fsck_tag((struct tag *) obj, (const char *) data,
++			size, error_func);
+ 
+ 	return error_func(obj, FSCK_ERROR, "unknown type '%d' (internal fsck error)",
+ 			  obj->type);
+diff --git a/fsck.h b/fsck.h
+index 1e4f527318..d1e6387a44 100644
+--- a/fsck.h
++++ b/fsck.h
+@@ -28,6 +28,8 @@ int fsck_error_function(struct object *obj, int type, const char *fmt, ...);
+  *    0		everything OK
+  */
+ int fsck_walk(struct object *obj, fsck_walk_func walk, void *data);
+-int fsck_object(struct object *obj, int strict, fsck_error error_func);
++/* If NULL is passed for data, we assume the object is local and read it. */
++int fsck_object(struct object *obj, void *data, unsigned long size,
++	int strict, fsck_error error_func);
+ 
+ #endif
+-- 
+2.17.0.921.gf22659ad46
+

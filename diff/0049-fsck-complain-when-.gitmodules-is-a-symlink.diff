@@ -1,0 +1,87 @@
+From 1f7a483763d4ae05f142b5a3c54310da55ee8580 Mon Sep 17 00:00:00 2001
+From: Jeff King <peff@peff.net>
+Date: Fri, 4 May 2018 20:03:35 -0400
+Subject: fsck: complain when .gitmodules is a symlink
+
+commit b7b1fca175f1ed7933f361028c631b9ac86d868d upstream.
+
+We've recently forbidden .gitmodules to be a symlink in
+verify_path(). And it's an easy way to circumvent our fsck
+checks for .gitmodules content. So let's complain when we
+see it.
+
+[jn: backported to 2.1.y:
+ - using error_func instead of report to report fsck errors
+ - until v2.6.2~7^2 (fsck: exit with non-zero when problems
+   are found, 2015-09-23), git fsck did not reliably use the
+   exit status to indicate errors; callers would have to
+   check stderr instead. Relaxed the test to permit that.]
+
+Signed-off-by: Jeff King <peff@peff.net>
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ fsck.c                     | 10 ++++++++--
+ t/t7415-submodule-names.sh | 28 ++++++++++++++++++++++++++++
+ 2 files changed, 36 insertions(+), 2 deletions(-)
+
+diff --git a/fsck.c b/fsck.c
+index 0e884c11e5..718235f52e 100644
+--- a/fsck.c
++++ b/fsck.c
+@@ -210,8 +210,14 @@ static int fsck_tree(struct tree *item, int strict, fsck_error error_func)
+ 		has_dotgit |= is_hfs_dotgit(name) || is_ntfs_dotgit(name);
+ 		has_zero_pad |= *(char *)desc.buffer == '0';
+ 
+-		if (is_hfs_dotgitmodules(name) || is_ntfs_dotgitmodules(name))
+-			oidhash_insert(&gitmodules_found, sha1);
++		if (is_hfs_dotgitmodules(name) || is_ntfs_dotgitmodules(name)) {
++			if (!S_ISLNK(mode))
++				oidhash_insert(&gitmodules_found, sha1);
++			else
++				retval += error_func(&item->object,
++					FSCK_ERROR,
++					".gitmodules is a symbolic link");
++		}
+ 
+ 		update_tree_entry(&desc);
+ 
+diff --git a/t/t7415-submodule-names.sh b/t/t7415-submodule-names.sh
+index 5375f7d011..fe8d0c1ad5 100755
+--- a/t/t7415-submodule-names.sh
++++ b/t/t7415-submodule-names.sh
+@@ -123,4 +123,32 @@ test_expect_success 'transfer.fsckObjects handles odd pack (index)' '
+ 	test_must_fail git -C dst.git index-pack --strict --stdin <odd.pack
+ '
+ 
++test_expect_success 'fsck detects symlinked .gitmodules file' '
++	git init symlink &&
++	(
++		cd symlink &&
++
++		# Make the tree directly to avoid index restrictions.
++		#
++		# Because symlinks store the target as a blob, choose
++		# a pathname that could be parsed as a .gitmodules file
++		# to trick naive non-symlink-aware checking.
++		tricky="[foo]bar=true" &&
++		content=$(git hash-object -w ../.gitmodules) &&
++		target=$(printf "$tricky" | git hash-object -w --stdin) &&
++		tree=$(
++			{
++				printf "100644 blob $content\t$tricky\n" &&
++				printf "120000 blob $target\t.gitmodules\n"
++			} | git mktree
++		) &&
++		commit=$(git commit-tree $tree) &&
++
++		# Check not only that fsck fails, but that it is due to the
++		# symlink detector.
++		test_might_fail git fsck 2>output &&
++		test_i18ngrep "is a symbolic link" output
++	)
++'
++
+ test_done
+-- 
+2.17.0.921.gf22659ad46
+

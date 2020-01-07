@@ -1,0 +1,246 @@
+From c74091b2da2250c6496cec8c95ad69358a3ec453 Mon Sep 17 00:00:00 2001
+From: Jeff King <peff@peff.net>
+Date: Fri, 13 Jan 2017 12:59:44 -0500
+Subject: fsck: parse loose object paths directly
+
+commit c68b489e56431cf27f7719913ab09ddc62f95912 upstream.
+
+When we iterate over the list of loose objects to check, we
+get the actual path of each object. But we then throw it
+away and pass just the sha1 to fsck_sha1(), which will do a
+fresh lookup. Usually it would find the same object, but it
+may not if an object exists both as a loose and a packed
+object. We may end up checking the packed object twice, and
+never look at the loose one.
+
+In practice this isn't too terrible, because if fsck doesn't
+complain, it means you have at least one good copy. But
+since the point of fsck is to look for corruption, we should
+be thorough.
+
+The new read_loose_object() interface can help us get the
+data from disk, and then we replace parse_object() with
+parse_object_buffer(). As a bonus, our error messages now
+mention the path to a corrupted object, which should make it
+easier to track down errors when they do happen.
+
+[jn: backported by passing path through the call chain to
+ fsck_loose, since until v2.7.0-rc0~68^2~4 (fsck: use
+ for_each_loose_file_in_objdir, 2015-09-24) it is not
+ available there]
+
+Signed-off-by: Jeff King <peff@peff.net>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ builtin/fsck.c  | 96 ++++++++++++++++++++++++++++++++++---------------
+ t/t1450-fsck.sh | 16 +++++++++
+ 2 files changed, 84 insertions(+), 28 deletions(-)
+
+diff --git a/builtin/fsck.c b/builtin/fsck.c
+index 08696ecd96..d2bb90ed99 100644
+--- a/builtin/fsck.c
++++ b/builtin/fsck.c
+@@ -320,18 +320,6 @@ static int fsck_obj(struct object *obj)
+ 	return 0;
+ }
+ 
+-static int fsck_sha1(const unsigned char *sha1)
+-{
+-	struct object *obj = parse_object(sha1);
+-	if (!obj) {
+-		errors_found |= ERROR_OBJECT;
+-		return error("%s: object corrupt or missing",
+-			     sha1_to_hex(sha1));
+-	}
+-	obj->flags |= HAS_OBJ;
+-	return fsck_obj(obj);
+-}
+-
+ static int fsck_obj_buffer(const unsigned char *sha1, enum object_type type,
+ 			   unsigned long size, void *buffer, int *eaten)
+ {
+@@ -354,17 +342,59 @@ static inline int is_loose_object_file(struct dirent *de,
+ 	return !get_sha1_hex(name, sha1);
+ }
+ 
+-static void fsck_dir(int i, char *path)
++static struct object *parse_loose_object(const unsigned char *sha1,
++					 const char *path)
+ {
+-	DIR *dir = opendir(path);
++	struct object *obj;
++	void *contents;
++	enum object_type type;
++	unsigned long size;
++	int eaten;
++
++	if (read_loose_object(path, sha1, &type, &size, &contents) < 0)
++		return NULL;
++
++	if (!contents && type != OBJ_BLOB)
++		die("BUG: read_loose_object streamed a non-blob");
++
++	obj = parse_object_buffer(sha1, type, size, contents, &eaten);
++
++	if (!eaten)
++		free(contents);
++	return obj;
++}
++
++static void fsck_loose(const unsigned char *sha1, const char *path)
++{
++	struct object *obj = parse_loose_object(sha1, path);
++
++	if (!obj) {
++		errors_found |= ERROR_OBJECT;
++		error("%s: object corrupt or missing: %s",
++		      sha1_to_hex(sha1), path);
++		return; /* keep checking other objects */
++	}
++
++	obj->flags = HAS_OBJ;
++	if (fsck_obj(obj))
++		errors_found |= ERROR_OBJECT;
++}
++
++static void fsck_dir(int i, struct strbuf *path)
++{
++	DIR *dir = opendir(path->buf);
+ 	struct dirent *de;
+ 	char name[100];
++	size_t dirlen;
+ 
+ 	if (!dir)
+ 		return;
+ 
+ 	if (verbose)
+-		fprintf(stderr, "Checking directory %s\n", path);
++		fprintf(stderr, "Checking directory %s\n", path->buf);
++
++	strbuf_addch(path, '/');
++	dirlen = path->len;
+ 
+ 	sprintf(name, "%02x", i);
+ 	while ((de = readdir(dir)) != NULL) {
+@@ -372,16 +402,20 @@ static void fsck_dir(int i, char *path)
+ 
+ 		if (is_dot_or_dotdot(de->d_name))
+ 			continue;
++
++		strbuf_setlen(path, dirlen);
++		strbuf_addstr(path, de->d_name);
++
+ 		if (is_loose_object_file(de, name, sha1)) {
+-			if (fsck_sha1(sha1))
+-				errors_found |= ERROR_OBJECT;
++			fsck_loose(sha1, path->buf);
+ 			continue;
+ 		}
+ 		if (starts_with(de->d_name, "tmp_obj_"))
+ 			continue;
+-		fprintf(stderr, "bad sha1 file: %s/%s\n", path, de->d_name);
++		fprintf(stderr, "bad sha1 file: %s\n", path->buf);
+ 	}
+ 	closedir(dir);
++	strbuf_setlen(path, dirlen-1);
+ }
+ 
+ static int default_refs;
+@@ -463,23 +497,28 @@ static void get_default_heads(void)
+ 	}
+ }
+ 
+-static void fsck_object_dir(const char *path)
++static void fsck_object_dir(struct strbuf *path)
+ {
+ 	int i;
+ 	struct progress *progress = NULL;
++	size_t dirlen;
+ 
+ 	if (verbose)
+ 		fprintf(stderr, "Checking object directory\n");
+ 
++	strbuf_addch(path, '/');
++	dirlen = path->len;
++
+ 	if (show_progress)
+ 		progress = start_progress(_("Checking object directories"), 256);
+ 	for (i = 0; i < 256; i++) {
+-		static char dir[4096];
+-		sprintf(dir, "%s/%02x", path, i);
+-		fsck_dir(i, dir);
++		strbuf_setlen(path, dirlen);
++		strbuf_addf(path, "%02x", i);
++		fsck_dir(i, path);
+ 		display_progress(progress, i+1);
+ 	}
+ 	stop_progress(&progress);
++	strbuf_setlen(path, dirlen - 1);
+ }
+ 
+ static int fsck_head_link(void)
+@@ -558,6 +597,7 @@ int cmd_fsck(int argc, const char **argv, const char *prefix)
+ {
+ 	int i, heads;
+ 	struct alternate_object_database *alt;
++	struct strbuf dir = STRBUF_INIT;
+ 
+ 	errors_found = 0;
+ 	check_replace_refs = 0;
+@@ -575,15 +615,14 @@ int cmd_fsck(int argc, const char **argv, const char *prefix)
+ 	}
+ 
+ 	fsck_head_link();
+-	fsck_object_dir(get_object_directory());
++	strbuf_addstr(&dir, get_object_directory());
++	fsck_object_dir(&dir);
+ 
+ 	prepare_alt_odb();
+ 	for (alt = alt_odb_list; alt; alt = alt->next) {
+-		char namebuf[PATH_MAX];
+-		int namelen = alt->name - alt->base;
+-		memcpy(namebuf, alt->base, namelen);
+-		namebuf[namelen - 1] = 0;
+-		fsck_object_dir(namebuf);
++		strbuf_reset(&dir);
++		strbuf_add(&dir, alt->base, alt->name - alt->base - 1);
++		fsck_object_dir(&dir);
+ 	}
+ 
+ 	if (check_full) {
+@@ -663,5 +702,6 @@ int cmd_fsck(int argc, const char **argv, const char *prefix)
+ 	}
+ 
+ 	check_connectivity();
++	strbuf_release(&dir);
+ 	return errors_found;
+ }
+diff --git a/t/t1450-fsck.sh b/t/t1450-fsck.sh
+index 6475f10bc5..b5976033b9 100755
+--- a/t/t1450-fsck.sh
++++ b/t/t1450-fsck.sh
+@@ -378,4 +378,20 @@ test_expect_success 'fsck notices ref pointing to missing tag' '
+ 	test_must_fail git -C missing fsck
+ '
+ 
++test_expect_success 'fsck finds problems in duplicate loose objects' '
++	rm -rf broken-duplicate &&
++	git init broken-duplicate &&
++	(
++		cd broken-duplicate &&
++		test_commit duplicate &&
++		# no "-d" here, so we end up with duplicates
++		git repack &&
++		# now corrupt the loose copy
++		file=$(sha1_file "$(git rev-parse HEAD)") &&
++		rm "$file" &&
++		echo broken >"$file" &&
++		test_must_fail git fsck
++	)
++'
++
+ test_done
+-- 
+2.17.0.921.gf22659ad46
+
