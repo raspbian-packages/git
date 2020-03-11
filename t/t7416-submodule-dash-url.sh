@@ -1,6 +1,6 @@
 #!/bin/sh
 
-test_description='check handling of .gitmodule url with dash'
+test_description='check handling of disallowed .gitmodule urls'
 . ./test-lib.sh
 
 test_expect_success 'create submodule with protected dash in url' '
@@ -39,6 +39,22 @@ test_expect_success 'clone rejects unprotected dash' '
 '
 
 test_expect_success 'fsck rejects unprotected dash' '
+	test_when_finished "rm -rf dst" &&
+	git init --bare dst &&
+	git -C dst config transfer.fsckObjects true &&
+	test_must_fail git push dst HEAD 2>err &&
+	grep gitmodulesUrl err
+'
+
+test_expect_success 'fsck rejects embedded newline in url' '
+	# create an orphan branch to avoid existing .gitmodules objects
+	git checkout --orphan newline &&
+	cat >.gitmodules <<-\EOF &&
+	[submodule "foo"]
+	url = "https://one.example.com?%0ahost=two.example.com/foo.git"
+	EOF
+	git add .gitmodules &&
+	git commit -m "gitmodules with newline" &&
 	test_when_finished "rm -rf dst" &&
 	git init --bare dst &&
 	git -C dst config transfer.fsckObjects true &&
