@@ -289,9 +289,17 @@ test_expect_success 'http paths can be part of context' '
 	EOF
 '
 
-test_expect_success 'url parser rejects embedded newlines' '
-	test_must_fail git credential fill <<-\EOF
+test_expect_success 'url parser ignores embedded newlines' '
+	check fill <<-EOF
 	url=https://one.example.com?%0ahost=two.example.com/
+	--
+	username=askpass-username
+	password=askpass-password
+	--
+	warning: url contains a newline in its host component: https://one.example.com?%0ahost=two.example.com/
+	warning: skipping credential lookup for url: https://one.example.com?%0ahost=two.example.com/
+	askpass: Username:
+	askpass: Password:
 	EOF
 '
 
