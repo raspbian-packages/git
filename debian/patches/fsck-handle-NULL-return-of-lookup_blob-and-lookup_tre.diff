@@ -1,0 +1,90 @@
+From 1b4a832501dbdbc2e74e52166c8aa54bae386d38 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ren=C3=A9=20Scharfe?= <l.s.r@web.de>
+Date: Thu, 5 Oct 2017 21:41:26 +0200
+Subject: fsck: handle NULL return of lookup_blob() and lookup_tree()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+lookup_blob() and lookup_tree() can return NULL if they find an object
+of an unexpected type.  Accessing the object member is undefined in that
+case.  Cast the result to a struct object pointer instead; we can do
+that because object is the first member of all object types.  This trick
+is already used in other places in the code.
+
+An error message is already shown by object_as_type(), which is called
+by the lookup functions.  The walk callback functions are expected to
+handle NULL object pointers passed to them, but put_object_name() needs
+a valid object, so avoid calling it without one.
+
+Suggested-by: SZEDER Gábor <szeder.dev@gmail.com>
+Helped-by: Junio C Hamano <gitster@pobox.com>
+Signed-off-by: Rene Scharfe <l.s.r@web.de>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+(cherry picked from commit 2720f6db5d35fece41190b93a1eba76d2f64f490)
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ fsck.c          |  8 ++++----
+ t/t1450-fsck.sh | 22 ++++++++++++++++++++++
+ 2 files changed, 26 insertions(+), 4 deletions(-)
+
+diff --git a/fsck.c b/fsck.c
+index 3a65a3baaf..e1b2c06571 100644
+--- a/fsck.c
++++ b/fsck.c
+@@ -402,15 +402,15 @@ static int fsck_walk_tree(struct tree *tree, void *data, struct fsck_options *op
+ 			continue;
+ 
+ 		if (S_ISDIR(entry.mode)) {
+-			obj = &lookup_tree(entry.oid->hash)->object;
+-			if (name)
++			obj = (struct object *)lookup_tree(entry.oid->hash);
++			if (name && obj)
+ 				put_object_name(options, obj, "%s%s/", name,
+ 					entry.path);
+ 			result = options->walk(obj, OBJ_TREE, data, options);
+ 		}
+ 		else if (S_ISREG(entry.mode) || S_ISLNK(entry.mode)) {
+-			obj = &lookup_blob(entry.oid->hash)->object;
+-			if (name)
++			obj = (struct object *)lookup_blob(entry.oid->hash);
++			if (name && obj)
+ 				put_object_name(options, obj, "%s%s", name,
+ 					entry.path);
+ 			result = options->walk(obj, OBJ_BLOB, data, options);
+diff --git a/t/t1450-fsck.sh b/t/t1450-fsck.sh
+index a817d8fdd9..1fb382d6c2 100755
+--- a/t/t1450-fsck.sh
++++ b/t/t1450-fsck.sh
+@@ -220,6 +220,28 @@ test_expect_success 'unparseable tree object' '
+ 	test_i18ngrep ! "fatal: empty filename in tree entry" out
+ '
+ 
++hex2oct() {
++	perl -ne 'printf "\\%03o", hex for /../g'
++}
++
++test_expect_success 'tree entry with type mismatch' '
++	test_when_finished "remove_object \$blob" &&
++	test_when_finished "remove_object \$tree" &&
++	test_when_finished "remove_object \$commit" &&
++	test_when_finished "git update-ref -d refs/heads/type_mismatch" &&
++	blob=$(echo blob | git hash-object -w --stdin) &&
++	blob_bin=$(echo $blob | hex2oct) &&
++	tree=$(
++		printf "40000 dir\0${blob_bin}100644 file\0${blob_bin}" |
++		git hash-object -t tree --stdin -w --literally
++	) &&
++	commit=$(git commit-tree $tree) &&
++	git update-ref refs/heads/type_mismatch $commit &&
++	test_must_fail git fsck >out 2>&1 &&
++	test_i18ngrep "is a blob, not a tree" out &&
++	test_i18ngrep ! "dangling blob" out
++'
++
+ test_expect_success 'tag pointing to nonexistent' '
+ 	cat >invalid-tag <<-\EOF &&
+ 	object ffffffffffffffffffffffffffffffffffffffff
+-- 
+2.26.0.292.g33ef6b2f38
+

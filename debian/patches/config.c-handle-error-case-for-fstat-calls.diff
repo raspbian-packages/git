@@ -1,0 +1,50 @@
+From c624d02c087a4eb6c732c558d69d2d948de4aa4d Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Nguy=E1=BB=85n=20Th=C3=A1i=20Ng=E1=BB=8Dc=20Duy?=
+ <pclouds@gmail.com>
+Date: Mon, 19 Dec 2016 16:21:55 +0700
+Subject: config.c: handle error case for fstat() calls
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Signed-off-by: Nguyễn Thái Ngọc Duy <pclouds@gmail.com>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+(cherry picked from commit 29647d79a9a29498675ccb137f567a44dc9628b8)
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ config.c | 12 ++++++++++--
+ 1 file changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/config.c b/config.c
+index 83fdecb1bc..497325646e 100644
+--- a/config.c
++++ b/config.c
+@@ -2194,7 +2194,12 @@ int git_config_set_multivar_in_file_gently(const char *config_filename,
+ 			goto out_free;
+ 		}
+ 
+-		fstat(in_fd, &st);
++		if (fstat(in_fd, &st) == -1) {
++			error_errno(_("fstat on %s failed"), config_filename);
++			ret = CONFIG_INVALID_FILE;
++			goto out_free;
++		}
++
+ 		contents_sz = xsize_t(st.st_size);
+ 		contents = xmmap_gently(NULL, contents_sz, PROT_READ,
+ 					MAP_PRIVATE, in_fd, 0);
+@@ -2414,7 +2419,10 @@ int git_config_rename_section_in_file(const char *config_filename,
+ 		goto unlock_and_out;
+ 	}
+ 
+-	fstat(fileno(config_file), &st);
++	if (fstat(fileno(config_file), &st) == -1) {
++		ret = error_errno(_("fstat on %s failed"), config_filename);
++		goto out;
++	}
+ 
+ 	if (chmod(get_lock_file_path(lock), st.st_mode & 07777) < 0) {
+ 		ret = error_errno("chmod on %s failed",
+-- 
+2.26.0.292.g33ef6b2f38
+

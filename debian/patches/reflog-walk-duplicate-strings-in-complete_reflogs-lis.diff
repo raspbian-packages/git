@@ -1,0 +1,75 @@
+From f06e7a35a854cf4a84b7048ee73eadd395676a53 Mon Sep 17 00:00:00 2001
+From: Jeff King <peff@peff.net>
+Date: Fri, 7 Jul 2017 04:39:50 -0400
+Subject: reflog-walk: duplicate strings in complete_reflogs list
+
+As part of the add_reflog_to_walk() function, we keep a
+string_list mapping refnames to their reflog contents. This
+serves as a cache so that accessing the same reflog twice
+requires only a single copy of the log in memory.
+
+The string_list is initialized via xcalloc, meaning its
+strdup_strings field is set to 0. But after inserting a
+string into the list, we unconditionally call free() on the
+string, leaving the list pointing to freed memory. If
+another reflog is added (e.g., "git log -g HEAD HEAD"), then
+the second one may have unpredictable results.
+
+The extra free was added by 5026b47175 (add_reflog_for_walk:
+avoid memory leak, 2017-05-04). Though if you look
+carefully, you can see that the code was buggy even before
+then. If we tried to read the reflogs by time but came up
+with no entries, we exited with an error, freeing the string
+in that code path. So the bug was harder to trigger, but
+still there.
+
+We can fix it by just asking the string list to make a copy
+of the string. Technically we could fix the problem by not
+calling free() on our string (and just handing over
+ownership to the string list), but there are enough
+conditionals that it's quite hard to figure out which code
+paths need the free and which do not. Simpler is better
+here.
+
+The new test reliably shows the problem when run with
+--valgrind or ASAN.
+
+Signed-off-by: Jeff King <peff@peff.net>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+(cherry picked from commit 75afe7ac8728128873c001d82b02ada4a3aa8181)
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ reflog-walk.c          | 1 +
+ t/t1411-reflog-show.sh | 6 ++++++
+ 2 files changed, 7 insertions(+)
+
+diff --git a/reflog-walk.c b/reflog-walk.c
+index a246af2767..cf6c45f777 100644
+--- a/reflog-walk.c
++++ b/reflog-walk.c
+@@ -136,6 +136,7 @@ struct reflog_walk_info {
+ void init_reflog_walk(struct reflog_walk_info **info)
+ {
+ 	*info = xcalloc(1, sizeof(struct reflog_walk_info));
++	(*info)->complete_reflogs.strdup_strings = 1;
+ }
+ 
+ int add_reflog_for_walk(struct reflog_walk_info *info,
+diff --git a/t/t1411-reflog-show.sh b/t/t1411-reflog-show.sh
+index 6ac7734d79..ae96eeb66a 100755
+--- a/t/t1411-reflog-show.sh
++++ b/t/t1411-reflog-show.sh
+@@ -171,4 +171,10 @@ test_expect_success 'reflog exists works' '
+ 	! git reflog exists refs/heads/nonexistent
+ '
+ 
++# The behavior with two reflogs is buggy and the output is in flux; for now
++# we're just checking that the program works at all without segfaulting.
++test_expect_success 'showing multiple reflogs works' '
++	git log -g HEAD HEAD >actual
++'
++
+ test_done
+-- 
+2.26.0.292.g33ef6b2f38
+

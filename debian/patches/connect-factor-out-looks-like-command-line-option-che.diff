@@ -1,0 +1,71 @@
+From c206275096c683fb6e5fc5adef28c44d1415833b Mon Sep 17 00:00:00 2001
+From: Jeff King <peff@peff.net>
+Date: Fri, 28 Jul 2017 15:25:45 -0400
+Subject: connect: factor out "looks like command line option" check
+
+We reject hostnames that start with a dash because they may
+be confused for command-line options. Let's factor out that
+notion into a helper function, as we'll use it in more
+places. And while it's simple now, it's not clear if some
+systems might need more complex logic to handle all cases.
+
+Signed-off-by: Jeff King <peff@peff.net>
+Reviewed-by: Jonathan Nieder <jrnieder@gmail.com>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+---
+ cache.h   | 8 ++++++++
+ connect.c | 2 +-
+ path.c    | 5 +++++
+ 3 files changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/cache.h b/cache.h
+index a50a61a197..4a537d686d 100644
+--- a/cache.h
++++ b/cache.h
+@@ -1076,6 +1076,14 @@ char *strip_path_suffix(const char *path, const char *suffix);
+ int daemon_avoid_alias(const char *path);
+ extern int is_ntfs_dotgit(const char *name);
+ 
++/*
++ * Returns true iff "str" could be confused as a command-line option when
++ * passed to a sub-program like "ssh". Note that this has nothing to do with
++ * shell-quoting, which should be handled separately; we're assuming here that
++ * the string makes it verbatim to the sub-program.
++ */
++int looks_like_command_line_option(const char *str);
++
+ /**
+  * Return a newly allocated string with the evaluation of
+  * "$XDG_CONFIG_HOME/git/$filename" if $XDG_CONFIG_HOME is non-empty, otherwise
+diff --git a/connect.c b/connect.c
+index 27dafb48cf..378dfaae1c 100644
+--- a/connect.c
++++ b/connect.c
+@@ -791,7 +791,7 @@ struct child_process *git_connect(int fd[2], const char *url,
+ 				return NULL;
+ 			}
+ 
+-			if (ssh_host[0] == '-')
++			if (looks_like_command_line_option(ssh_host))
+ 				die("strange hostname '%s' blocked", ssh_host);
+ 
+ 			ssh = get_ssh_command();
+diff --git a/path.c b/path.c
+index 52d889c88e..4c054037cc 100644
+--- a/path.c
++++ b/path.c
+@@ -1252,6 +1252,11 @@ int is_ntfs_dotgit(const char *name)
+ 		}
+ }
+ 
++int looks_like_command_line_option(const char *str)
++{
++	return str && str[0] == '-';
++}
++
+ char *xdg_config_home(const char *filename)
+ {
+ 	const char *home, *config_home;
+-- 
+2.14.0.434.g98096fd7a8
+

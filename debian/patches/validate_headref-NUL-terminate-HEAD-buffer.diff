@@ -1,0 +1,60 @@
+From 934c5ece9f7dfd481bcf3414fc603602cdb9eedc Mon Sep 17 00:00:00 2001
+From: Jeff King <peff@peff.net>
+Date: Wed, 27 Sep 2017 02:17:23 -0400
+Subject: validate_headref: NUL-terminate HEAD buffer
+
+When we are checking to see if we have a git repo, we peek
+into the HEAD file and see if it's a plausible symlink,
+symref, or detached HEAD.
+
+For the latter two, we read the contents with read_in_full(),
+which means they aren't NUL-terminated. The symref check is
+careful to respect the length we got, but the sha1 check
+will happily parse up to 40 bytes, even if we read fewer.
+
+E.g.,:
+
+  echo 1234 >.git/HEAD
+  git rev-parse
+
+will parse 36 uninitialized bytes from our stack buffer.
+
+This isn't a big deal in practice. Our buffer is 256 bytes,
+so we know we'll never read outside of it. The worst case is
+that the uninitialized bytes look like valid hex, and we
+claim a bogus HEAD file is valid. The chances of this
+happening randomly are quite slim, but let's be careful.
+
+One option would be to check that "len == 41" before feeding
+the buffer to get_sha1_hex(). But we'd like to eventually
+prepare for a world with variable-length hashes. Let's
+NUL-terminate as soon as we've read the buffer (we already
+even leave a spare byte to do so!). That fixes this problem
+without depending on the size of an object id.
+
+Signed-off-by: Jeff King <peff@peff.net>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+(cherry picked from commit 6e68c914102774832c519804498538791cdddff9)
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ path.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/path.c b/path.c
+index 83006824b3..c6fbc637ec 100644
+--- a/path.c
++++ b/path.c
+@@ -602,6 +602,10 @@ int validate_headref(const char *path)
+ 	len = read_in_full(fd, buffer, sizeof(buffer)-1);
+ 	close(fd);
+ 
++	if (len < 0)
++		return -1;
++	buffer[len] = '\0';
++
+ 	/*
+ 	 * Is it a symbolic ref?
+ 	 */
+-- 
+2.26.0.292.g33ef6b2f38
+

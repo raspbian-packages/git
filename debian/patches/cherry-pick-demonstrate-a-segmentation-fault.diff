@@ -1,0 +1,45 @@
+From 2f50ec719af7dc5b6ecc7ebb596348387fd56c67 Mon Sep 17 00:00:00 2001
+From: Johannes Schindelin <johannes.schindelin@gmx.de>
+Date: Sat, 26 Nov 2016 13:48:02 +0100
+Subject: cherry-pick: demonstrate a segmentation fault
+
+In https://github.com/git-for-windows/git/issues/952, a complicated
+scenario was described that leads to a segmentation fault in
+cherry-pick.
+
+It boils down to a certain code path involving a renamed file that is
+dirty, for which `refresh_cache_entry()` returns `NULL`, and that
+`NULL` not being handled properly.
+
+Signed-off-by: Johannes Schindelin <johannes.schindelin@gmx.de>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+(cherry picked from commit 05f2dfb965476a59050b7c3446b1281bdcac7051)
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ t/t3501-revert-cherry-pick.sh | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/t/t3501-revert-cherry-pick.sh b/t/t3501-revert-cherry-pick.sh
+index 394f0005a1..d7b4251234 100755
+--- a/t/t3501-revert-cherry-pick.sh
++++ b/t/t3501-revert-cherry-pick.sh
+@@ -141,4 +141,16 @@ test_expect_success 'cherry-pick "-" works with arguments' '
+ 	test_cmp expect actual
+ '
+ 
++test_expect_failure 'cherry-pick works with dirty renamed file' '
++	test_commit to-rename &&
++	git checkout -b unrelated &&
++	test_commit unrelated &&
++	git checkout @{-1} &&
++	git mv to-rename.t renamed &&
++	test_tick &&
++	git commit -m renamed &&
++	echo modified >renamed &&
++	git cherry-pick refs/heads/unrelated
++'
++
+ test_done
+-- 
+2.26.0.292.g33ef6b2f38
+
