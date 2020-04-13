@@ -1,0 +1,53 @@
+From 399fa92de1dfb0ceaeed304c6f89b7158ee920a5 Mon Sep 17 00:00:00 2001
+From: Johannes Schindelin <johannes.schindelin@gmx.de>
+Date: Sat, 26 Nov 2016 13:48:06 +0100
+Subject: merge-recursive: handle NULL in add_cacheinfo() correctly
+
+1335d76e45 ("merge: avoid "safer crlf" during recording of merge
+results", 2016-07-08) tried to split make_cache_entry() call made
+with CE_MATCH_REFRESH into a call to make_cache_entry() without one,
+followed by a call to add_cache_entry(), refresh_cache() and another
+add_cache_entry() as needed.  However the conversion was botched in
+that it forgot that refresh_cache() can return NULL, which was
+handled correctly in make_cache_entry() but in the updated code.
+
+This fixes https://github.com/git-for-windows/git/issues/952
+
+Signed-off-by: Johannes Schindelin <johannes.schindelin@gmx.de>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+(cherry picked from commit 55e9f0e5c9a918c246b7eae1fe2a2e954f6426af)
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ merge-recursive.c             | 2 ++
+ t/t3501-revert-cherry-pick.sh | 2 +-
+ 2 files changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/merge-recursive.c b/merge-recursive.c
+index 9041c2f149..56c0a2eafb 100644
+--- a/merge-recursive.c
++++ b/merge-recursive.c
+@@ -235,6 +235,8 @@ static int add_cacheinfo(struct merge_options *o,
+ 		struct cache_entry *nce;
+ 
+ 		nce = refresh_cache_entry(ce, CE_MATCH_REFRESH | CE_MATCH_IGNORE_MISSING);
++		if (!nce)
++			return error(_("addinfo_cache failed for path '%s'"), path);
+ 		if (nce != ce)
+ 			ret = add_cache_entry(nce, options);
+ 	}
+diff --git a/t/t3501-revert-cherry-pick.sh b/t/t3501-revert-cherry-pick.sh
+index d7b4251234..4f2a263b63 100755
+--- a/t/t3501-revert-cherry-pick.sh
++++ b/t/t3501-revert-cherry-pick.sh
+@@ -141,7 +141,7 @@ test_expect_success 'cherry-pick "-" works with arguments' '
+ 	test_cmp expect actual
+ '
+ 
+-test_expect_failure 'cherry-pick works with dirty renamed file' '
++test_expect_success 'cherry-pick works with dirty renamed file' '
+ 	test_commit to-rename &&
+ 	git checkout -b unrelated &&
+ 	test_commit unrelated &&
+-- 
+2.26.0.292.g33ef6b2f38
+

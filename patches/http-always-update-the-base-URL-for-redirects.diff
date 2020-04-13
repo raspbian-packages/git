@@ -1,0 +1,154 @@
+From 1b3823c8f0dc510483283ac22f50ab84c9344535 Mon Sep 17 00:00:00 2001
+From: Jeff King <peff@peff.net>
+Date: Tue, 6 Dec 2016 13:24:35 -0500
+Subject: http: always update the base URL for redirects
+
+If a malicious server redirects the initial ref
+advertisement, it may be able to leak sha1s from other,
+unrelated servers that the client has access to. For
+example, imagine that Alice is a git user, she has access to
+a private repository on a server hosted by Bob, and Mallory
+runs a malicious server and wants to find out about Bob's
+private repository.
+
+Mallory asks Alice to clone an unrelated repository from her
+over HTTP. When Alice's client contacts Mallory's server for
+the initial ref advertisement, the server issues an HTTP
+redirect for Bob's server. Alice contacts Bob's server and
+gets the ref advertisement for the private repository. If
+there is anything to fetch, she then follows up by asking
+the server for one or more sha1 objects. But who is the
+server?
+
+If it is still Mallory's server, then Alice will leak the
+existence of those sha1s to her.
+
+Since commit c93c92f30 (http: update base URLs when we see
+redirects, 2013-09-28), the client usually rewrites the base
+URL such that all further requests will go to Bob's server.
+But this is done by textually matching the URL. If we were
+originally looking for "http://mallory/repo.git/info/refs",
+and we got pointed at "http://bob/other.git/info/refs", then
+we know that the right root is "http://bob/other.git".
+
+If the redirect appears to change more than just the root,
+we punt and continue to use the original server. E.g.,
+imagine the redirect adds a URL component that Bob's server
+will ignore, like "http://bob/other.git/info/refs?dummy=1".
+
+We can solve this by aborting in this case rather than
+silently continuing to use Mallory's server. In addition to
+protecting from sha1 leakage, it's arguably safer and more
+sane to refuse a confusing redirect like that in general.
+For example, part of the motivation in c93c92f30 is
+avoiding accidentally sending credentials over clear http,
+just to get a response that says "try again over https". So
+even in a non-malicious case, we'd prefer to err on the side
+of caution.
+
+The downside is that it's possible this will break a
+legitimate but complicated server-side redirection scheme.
+The setup given in the newly added test does work, but it's
+convoluted enough that we don't need to care about it. A
+more plausible case would be a server which redirects a
+request for "info/refs?service=git-upload-pack" to just
+"info/refs" (because it does not do smart HTTP, and for some
+reason really dislikes query parameters).  Right now we
+would transparently downgrade to dumb-http, but with this
+patch, we'd complain (and the user would have to set
+GIT_SMART_HTTP=0 to fetch).
+
+Reported-by: Jann Horn <jannh@google.com>
+Signed-off-by: Jeff King <peff@peff.net>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+(cherry picked from commit 6628eb41db5189c0cdfdced6d8697e7c813c5f0f)
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ http.c                        | 12 ++++++++----
+ t/lib-httpd/apache.conf       |  8 ++++++++
+ t/t5551-http-fetch-smart.sh   |  4 ++++
+ t/t5812-proto-disable-http.sh |  1 +
+ 4 files changed, 21 insertions(+), 4 deletions(-)
+
+diff --git a/http.c b/http.c
+index 4c4a812fcc..8c4aaa4ea2 100644
+--- a/http.c
++++ b/http.c
+@@ -1655,9 +1655,9 @@ static int http_request(const char *url,
+  *
+  * Note that this assumes a sane redirect scheme. It's entirely possible
+  * in the example above to end up at a URL that does not even end in
+- * "info/refs".  In such a case we simply punt, as there is not much we can
+- * do (and such a scheme is unlikely to represent a real git repository,
+- * which means we are likely about to abort anyway).
++ * "info/refs".  In such a case we die. There's not much we can do, such a
++ * scheme is unlikely to represent a real git repository, and failing to
++ * rewrite the base opens options for malicious redirects to do funny things.
+  */
+ static int update_url_from_redirect(struct strbuf *base,
+ 				    const char *asked,
+@@ -1677,10 +1677,14 @@ static int update_url_from_redirect(struct strbuf *base,
+ 
+ 	if (got->len < tail_len ||
+ 	    strcmp(tail, got->buf + got->len - tail_len))
+-		return 0; /* insane redirect scheme */
++		die(_("unable to update url base from redirection:\n"
++		      "  asked for: %s\n"
++		      "   redirect: %s"),
++		    asked, got->buf);
+ 
+ 	strbuf_reset(base);
+ 	strbuf_add(base, got->buf, got->len - tail_len);
++
+ 	return 1;
+ }
+ 
+diff --git a/t/lib-httpd/apache.conf b/t/lib-httpd/apache.conf
+index c3e631394f..f98b23a3cf 100644
+--- a/t/lib-httpd/apache.conf
++++ b/t/lib-httpd/apache.conf
+@@ -132,6 +132,14 @@ RewriteRule ^/ftp-redir/(.*)$ ftp://localhost:1000/$1 [R=302]
+ RewriteRule ^/loop-redir/x-x-x-x-x-x-x-x-x-x-x-x-x-x-x-x-x-x-x-x-(.*) /$1 [R=302]
+ RewriteRule ^/loop-redir/(.*)$ /loop-redir/x-$1 [R=302]
+ 
++# The first rule issues a client-side redirect to something
++# that _doesn't_ look like a git repo. The second rule is a
++# server-side rewrite, so that it turns out the odd-looking
++# thing _is_ a git repo. The "[PT]" tells Apache to match
++# the usual ScriptAlias rules for /smart.
++RewriteRule ^/insane-redir/(.*)$ /intern-redir/$1/foo [R=301]
++RewriteRule ^/intern-redir/(.*)/foo$ /smart/$1 [PT]
++
+ # Apache 2.2 does not understand <RequireAll>, so we use RewriteCond.
+ # And as RewriteCond does not allow testing for non-matches, we match
+ # the desired case first (one has abra, two has cadabra), and let it
+diff --git a/t/t5551-http-fetch-smart.sh b/t/t5551-http-fetch-smart.sh
+index 43665ab4a8..d4159bd196 100755
+--- a/t/t5551-http-fetch-smart.sh
++++ b/t/t5551-http-fetch-smart.sh
+@@ -119,6 +119,10 @@ test_expect_success 'redirects re-root further requests' '
+ 	git clone $HTTPD_URL/smart-redir-limited/repo.git repo-redir-limited
+ '
+ 
++test_expect_success 're-rooting dies on insane schemes' '
++	test_must_fail git clone $HTTPD_URL/insane-redir/repo.git insane
++'
++
+ test_expect_success 'clone from password-protected repository' '
+ 	echo two >expect &&
+ 	set_askpass user@host pass@host &&
+diff --git a/t/t5812-proto-disable-http.sh b/t/t5812-proto-disable-http.sh
+index 0d105d5417..044cc152f8 100755
+--- a/t/t5812-proto-disable-http.sh
++++ b/t/t5812-proto-disable-http.sh
+@@ -18,6 +18,7 @@ test_proto "smart http" http "$HTTPD_URL/smart/repo.git"
+ 
+ test_expect_success 'curl redirects respect whitelist' '
+ 	test_must_fail env GIT_ALLOW_PROTOCOL=http:https \
++			   GIT_SMART_HTTP=0 \
+ 		git clone "$HTTPD_URL/ftp-redir/repo.git" 2>stderr &&
+ 	{
+ 		test_i18ngrep "ftp.*disabled" stderr ||
+-- 
+2.26.0.292.g33ef6b2f38
+

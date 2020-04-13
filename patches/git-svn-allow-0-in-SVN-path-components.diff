@@ -1,0 +1,34 @@
+From 1dea8b3a82efb928e2d5118d43643f05dce38ddd Mon Sep 17 00:00:00 2001
+From: Eric Wong <e@80x24.org>
+Date: Wed, 30 Nov 2016 00:45:41 +0000
+Subject: git-svn: allow "0" in SVN path components
+
+Blindly checking a path component for falsiness is unwise, as
+"0" is false to Perl, but a valid pathname component for SVN
+(or any filesystem).
+
+Found via random code reading.
+
+Signed-off-by: Eric Wong <e@80x24.org>
+(cherry picked from commit a0f5a0c8285395d6eb2123e0c1ce78f900e1567c)
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ perl/Git/SVN/Ra.pm | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/perl/Git/SVN/Ra.pm b/perl/Git/SVN/Ra.pm
+index e764696801..56ad9870bc 100644
+--- a/perl/Git/SVN/Ra.pm
++++ b/perl/Git/SVN/Ra.pm
+@@ -606,7 +606,7 @@ sub minimize_url {
+ 			my $latest = $ra->get_latest_revnum;
+ 			$ra->get_log("", $latest, 0, 1, 0, 1, sub {});
+ 		};
+-	} while ($@ && ($c = shift @components));
++	} while ($@ && defined($c = shift @components));
+ 
+ 	return canonicalize_url($url);
+ }
+-- 
+2.26.0.292.g33ef6b2f38
+

@@ -1,0 +1,71 @@
+From 6ee72a9896ed9f72b359f4227824b71d9e1fdc88 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ren=C3=A9=20Scharfe?= <l.s.r@web.de>
+Date: Tue, 27 Jun 2017 19:03:30 +0200
+Subject: apply: check git diffs for missing old filenames
+
+2c93286a (fix "git apply --index ..." not to deref NULL) added a check
+for git patches missing a +++ line, preventing a segfault.  Check for
+missing --- lines as well, and add a test for each case.
+
+Found by Vegard Nossum using AFL.
+
+Original-patch-by: Vegard Nossum <vegard.nossum@oracle.com>
+Signed-off-by: Rene Scharfe <l.s.r@web.de>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+(cherry picked from commit 4269974179ff4fc2a970c972330ba5b7f26a323b)
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ apply.c                    |  3 ++-
+ t/t4133-apply-filenames.sh | 24 ++++++++++++++++++++++++
+ 2 files changed, 26 insertions(+), 1 deletion(-)
+
+diff --git a/apply.c b/apply.c
+index a2c80c092f..879d37a9ca 100644
+--- a/apply.c
++++ b/apply.c
+@@ -1585,7 +1585,8 @@ static int find_header(struct apply_state *state,
+ 				patch->old_name = xstrdup(patch->def_name);
+ 				patch->new_name = xstrdup(patch->def_name);
+ 			}
+-			if (!patch->is_delete && !patch->new_name) {
++			if ((!patch->new_name && !patch->is_delete) ||
++			    (!patch->old_name && !patch->is_new)) {
+ 				error(_("git diff header lacks filename information "
+ 					     "(line %d)"), state->linenr);
+ 				return -128;
+diff --git a/t/t4133-apply-filenames.sh b/t/t4133-apply-filenames.sh
+index 2ecb4216b7..c5ed3b17c4 100755
+--- a/t/t4133-apply-filenames.sh
++++ b/t/t4133-apply-filenames.sh
+@@ -35,4 +35,28 @@ test_expect_success 'apply diff with inconsistent filenames in headers' '
+ 	test_i18ngrep "inconsistent old filename" err
+ '
+ 
++test_expect_success 'apply diff with new filename missing from headers' '
++	cat >missing_new_filename.diff <<-\EOF &&
++	diff --git a/f b/f
++	index 0000000..d00491f
++	--- a/f
++	@@ -0,0 +1 @@
++	+1
++	EOF
++	test_must_fail git apply missing_new_filename.diff 2>err &&
++	test_i18ngrep "lacks filename information" err
++'
++
++test_expect_success 'apply diff with old filename missing from headers' '
++	cat >missing_old_filename.diff <<-\EOF &&
++	diff --git a/f b/f
++	index d00491f..0000000
++	+++ b/f
++	@@ -1 +0,0 @@
++	-1
++	EOF
++	test_must_fail git apply missing_old_filename.diff 2>err &&
++	test_i18ngrep "lacks filename information" err
++'
++
+ test_done
+-- 
+2.26.0.292.g33ef6b2f38
+

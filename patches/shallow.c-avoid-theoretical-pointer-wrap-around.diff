@@ -1,0 +1,46 @@
+From 4630d78f766ac9f0278042ffcf2567f1e49b12a7 Mon Sep 17 00:00:00 2001
+From: Rasmus Villemoes <rv@rasmusvillemoes.dk>
+Date: Tue, 6 Dec 2016 19:53:37 +0700
+Subject: shallow.c: avoid theoretical pointer wrap-around
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The expression info->free+size is technically undefined behaviour in
+exactly the case we want to test for. Moreover, the compiler is likely
+to translate the expression to
+
+  (unsigned long)info->free + size > (unsigned long)info->end
+
+where there's at least a theoretical chance that the LHS could wrap
+around 0, giving a false negative.
+
+This might as well be written using pointer subtraction avoiding these
+issues.
+
+Signed-off-by: Rasmus Villemoes <rv@rasmusvillemoes.dk>
+Signed-off-by: Nguyễn Thái Ngọc Duy <pclouds@gmail.com>
+Reviewed-by: Jeff King <peff@peff.net>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+(cherry picked from commit 381aa8e73070646933520e1133a81ab4ba383891)
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ shallow.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/shallow.c b/shallow.c
+index 75e1702569..719f69938c 100644
+--- a/shallow.c
++++ b/shallow.c
+@@ -446,7 +446,7 @@ static uint32_t *paint_alloc(struct paint_info *info)
+ 	unsigned nr = (info->nr_bits + 31) / 32;
+ 	unsigned size = nr * sizeof(uint32_t);
+ 	void *p;
+-	if (!info->pool_count || info->free + size > info->end) {
++	if (!info->pool_count || size > info->end - info->free) {
+ 		if (size > POOL_SIZE)
+ 			die("BUG: pool size too small for %d in paint_alloc()",
+ 			    size);
+-- 
+2.26.0.292.g33ef6b2f38
+

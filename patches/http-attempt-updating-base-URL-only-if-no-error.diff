@@ -1,0 +1,114 @@
+From dcf98ed7c71aa54cf857f059e0882c3c4b3bc3bf Mon Sep 17 00:00:00 2001
+From: Jonathan Tan <jonathantanmy@google.com>
+Date: Mon, 27 Feb 2017 18:53:11 -0800
+Subject: http: attempt updating base URL only if no error
+
+http.c supports HTTP redirects of the form
+
+  http://foo/info/refs?service=git-upload-pack
+  -> http://anything
+  -> http://bar/info/refs?service=git-upload-pack
+
+(that is to say, as long as the Git part of the path and the query
+string is preserved in the final redirect destination, the intermediate
+steps can have any URL). However, if one of the intermediate steps
+results in an HTTP exception, a confusing "unable to update url base
+from redirection" message is printed instead of a Curl error message
+with the HTTP exception code.
+
+This was introduced by 2 commits. Commit c93c92f ("http: update base
+URLs when we see redirects", 2013-09-28) introduced a best-effort
+optimization that required checking if only the "base" part of the URL
+differed between the initial request and the final redirect destination,
+but it performed the check before any HTTP status checking was done. If
+something went wrong, the normal code path was still followed, so this
+did not cause any confusing error messages until commit 6628eb4 ("http:
+always update the base URL for redirects", 2016-12-06), which taught
+http to die if the non-"base" part of the URL differed.
+
+Therefore, teach http to check the HTTP status before attempting to
+check if only the "base" part of the URL differed. This commit teaches
+http_request_reauth to return early without updating options->base_url
+upon an error; the only invoker of this function that passes a non-NULL
+"options" is remote-curl.c (through "http_get_strbuf"), which only uses
+options->base_url for an informational message in the situations that
+this commit cares about (that is, when the return value is not HTTP_OK).
+
+The included test checks that the redirect scheme at the beginning of
+this commit message works, and that returning a 502 in the middle of the
+redirect scheme produces the correct result. Note that this is different
+from the test in commit 6628eb4 ("http: always update the base URL for
+redirects", 2016-12-06) in that this commit tests that a Git-shaped URL
+(http://.../info/refs?service=git-upload-pack) works, whereas commit
+6628eb4 tests that a non-Git-shaped URL
+(http://.../info/refs/foo?service=git-upload-pack) does not work (even
+though Git is processing that URL) and is an error that is fatal, not
+silently swallowed.
+
+Signed-off-by: Jonathan Tan <jonathantanmy@google.com>
+Acked-by: Jeff King <peff@peff.net>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+(cherry picked from commit 8e27391a5fdc9194c4ed3ed6c64ec4750a1a08b5)
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ http.c                     | 3 +++
+ t/lib-httpd/apache.conf    | 9 +++++++++
+ t/t5550-http-fetch-dumb.sh | 9 +++++++++
+ 3 files changed, 21 insertions(+)
+
+diff --git a/http.c b/http.c
+index 06b3981340..3478777a0a 100644
+--- a/http.c
++++ b/http.c
+@@ -1722,6 +1722,9 @@ static int http_request_reauth(const char *url,
+ {
+ 	int ret = http_request(url, result, target, options);
+ 
++	if (ret != HTTP_OK && ret != HTTP_REAUTH)
++		return ret;
++
+ 	if (options && options->effective_url && options->base_url) {
+ 		if (update_url_from_redirect(options->base_url,
+ 					     url, options->effective_url)) {
+diff --git a/t/lib-httpd/apache.conf b/t/lib-httpd/apache.conf
+index 69174c6e31..0642ae7e6e 100644
+--- a/t/lib-httpd/apache.conf
++++ b/t/lib-httpd/apache.conf
+@@ -133,6 +133,15 @@ RewriteRule ^/ftp-redir/(.*)$ ftp://localhost:1000/$1 [R=302]
+ RewriteRule ^/loop-redir/x-x-x-x-x-x-x-x-x-x-x-x-x-x-x-x-x-x-x-x-(.*) /$1 [R=302]
+ RewriteRule ^/loop-redir/(.*)$ /loop-redir/x-$1 [R=302]
+ 
++# redir-to/502/x?y -> really-redir-to?path=502/x&qs=y which returns 502
++# redir-to/x?y -> really-redir-to?path=x&qs=y -> x?y
++RewriteCond %{QUERY_STRING} ^(.*)$
++RewriteRule ^/redir-to/(.*)$ /really-redir-to?path=$1&qs=%1 [R=302]
++RewriteCond %{QUERY_STRING} ^path=502/(.*)&qs=(.*)$
++RewriteRule ^/really-redir-to$ - [R=502,L]
++RewriteCond %{QUERY_STRING} ^path=(.*)&qs=(.*)$
++RewriteRule ^/really-redir-to$ /%1?%2 [R=302]
++
+ # The first rule issues a client-side redirect to something
+ # that _doesn't_ look like a git repo. The second rule is a
+ # server-side rewrite, so that it turns out the odd-looking
+diff --git a/t/t5550-http-fetch-dumb.sh b/t/t5550-http-fetch-dumb.sh
+index 264a1ab8b0..ac06bc3e40 100755
+--- a/t/t5550-http-fetch-dumb.sh
++++ b/t/t5550-http-fetch-dumb.sh
+@@ -368,5 +368,14 @@ test_expect_success 'http-alternates cannot point at funny protocols' '
+ 		clone "$HTTPD_URL/dumb/evil.git" evil-file
+ '
+ 
++test_expect_success 'can redirect through non-"info/refs?service=git-upload-pack" URL' '
++	git clone "$HTTPD_URL/redir-to/dumb/repo.git"
++'
++
++test_expect_success 'print HTTP error when any intermediate redirect throws error' '
++	test_must_fail git clone "$HTTPD_URL/redir-to/502" 2> stderr &&
++	test_i18ngrep "unable to access.*/redir-to/502" stderr
++'
++
+ stop_httpd
+ test_done
+-- 
+2.26.0.292.g33ef6b2f38
+

@@ -1,0 +1,33 @@
+From d2fc6cf9e2542e5e7ec92d5958420309ba93488d Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ren=C3=A9=20Scharfe?= <l.s.r@web.de>
+Date: Sat, 6 May 2017 19:13:56 +0200
+Subject: am: check return value of resolve_refdup before using hash
+
+If resolve_refdup() fails it returns NULL and possibly leaves its hash
+output parameter untouched.  Make sure to use it only if the function
+succeeded, in order to avoid accessing uninitialized memory.
+
+Signed-off-by: Rene Scharfe <l.s.r@web.de>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+(cherry picked from commit 57e0ef0e0e90c4cb72c35db874fc3d035b88ce4d)
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ builtin/am.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/builtin/am.c b/builtin/am.c
+index 6981f42ce9..bcfc426879 100644
+--- a/builtin/am.c
++++ b/builtin/am.c
+@@ -2157,7 +2157,7 @@ static void am_abort(struct am_state *state)
+ 	am_rerere_clear();
+ 
+ 	curr_branch = resolve_refdup("HEAD", 0, curr_head.hash, NULL);
+-	has_curr_head = !is_null_oid(&curr_head);
++	has_curr_head = curr_branch && !is_null_oid(&curr_head);
+ 	if (!has_curr_head)
+ 		hashcpy(curr_head.hash, EMPTY_TREE_SHA1_BIN);
+ 
+-- 
+2.26.0.292.g33ef6b2f38
+
