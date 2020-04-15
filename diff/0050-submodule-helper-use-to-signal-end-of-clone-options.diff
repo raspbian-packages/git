@@ -1,0 +1,47 @@
+From b57be507ea0f44852c73a79010e69ec67e98415a Mon Sep 17 00:00:00 2001
+From: Jeff King <peff@peff.net>
+Date: Mon, 24 Sep 2018 04:32:15 -0400
+Subject: submodule--helper: use "--" to signal end of clone options
+
+commit 98afac7a7cefdca0d2c4917dd8066a59f7088265 upstream.
+
+When we clone a submodule, we call "git clone $url $path".
+But there's nothing to say that those components can't begin
+with a dash themselves, confusing git-clone into thinking
+they're options. Let's pass "--" to make it clear what we
+expect.
+
+There's no test here, because it's actually quite hard to
+make these names work, even with "git clone" parsing them
+correctly. And we're going to restrict these cases even
+further in future commits. So we'll leave off testing until
+then; this is just the minimal fix to prevent us from doing
+something stupid with a badly formed entry.
+
+[jn: backported to 2.1.y by applying to git-submodule.sh
+ instead of submodule--helper]
+
+Reported-by: joernchen <joernchen@phenoelit.de>
+Signed-off-by: Jeff King <peff@peff.net>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ git-submodule.sh | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/git-submodule.sh b/git-submodule.sh
+index 92414dfa8b..22caf37897 100755
+--- a/git-submodule.sh
++++ b/git-submodule.sh
+@@ -305,7 +305,7 @@ module_clone()
+ 		(
+ 			clear_local_git_env
+ 			git clone $quiet ${depth:+"$depth"} -n ${reference:+"$reference"} \
+-				--separate-git-dir "$gitdir" "$url" "$sm_path"
++				--separate-git-dir "$gitdir" -- "$url" "$sm_path"
+ 		) ||
+ 		die "$(eval_gettext "Clone of '\$url' into submodule path '\$sm_path' failed")"
+ 	fi
+-- 
+2.19.0.605.g01d371f741
+
