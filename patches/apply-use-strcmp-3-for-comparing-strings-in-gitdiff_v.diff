@@ -1,0 +1,40 @@
+From e669250f0f804aeb60e913b21956dbb35c674e23 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ren=C3=A9=20Scharfe?= <l.s.r@web.de>
+Date: Sat, 8 Jul 2017 10:58:42 +0200
+Subject: apply: use strcmp(3) for comparing strings in gitdiff_verify_name()
+
+We don't know the length of the C string "another".  It could be
+shorter than "name", which we compare it to using memchr(3).  Call
+strcmp(3) instead to avoid running over the end of the former, and
+get rid of a strlen(3) call as a bonus.
+
+Signed-off-by: Rene Scharfe <l.s.r@web.de>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+(cherry picked from commit 2d105451c0768fc3e9600dec7bca2376f482521e)
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ apply.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/apply.c b/apply.c
+index cb7abfe311..7f2a53b4d0 100644
+--- a/apply.c
++++ b/apply.c
+@@ -971,13 +971,12 @@ static int gitdiff_verify_name(struct apply_state *state,
+ 	}
+ 
+ 	if (*name) {
+-		int len = strlen(*name);
+ 		char *another;
+ 		if (isnull)
+ 			return error(_("git apply: bad git-diff - expected /dev/null, got %s on line %d"),
+ 				     *name, state->linenr);
+ 		another = find_name(state, line, NULL, state->p_value, TERM_TAB);
+-		if (!another || memcmp(another, *name, len + 1)) {
++		if (!another || strcmp(another, *name)) {
+ 			free(another);
+ 			return error((side == DIFF_NEW_NAME) ?
+ 			    _("git apply: bad git-diff - inconsistent new filename on line %d") :
+-- 
+2.26.0.292.g33ef6b2f38
+

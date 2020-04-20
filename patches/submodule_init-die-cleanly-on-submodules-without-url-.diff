@@ -1,0 +1,70 @@
+From 13822f2a3a5ae7c326333c4d6186feb24128a493 Mon Sep 17 00:00:00 2001
+From: Jeff King <peff@peff.net>
+Date: Mon, 24 Apr 2017 20:57:47 -0400
+Subject: submodule_init: die cleanly on submodules without url defined
+
+commit 627fde102515a7807dba89acaa88cb053b38a44a upstream.
+
+When we init a submodule, we try to die when it has no URL
+defined:
+
+  url = xstrdup(sub->url);
+  if (!url)
+	  die(...);
+
+But that's clearly nonsense. xstrdup() will never return
+NULL, and if sub->url is NULL, we'll segfault.
+
+These two bits of code need to be flipped, so we check
+sub->url before looking at it.
+
+Signed-off-by: Jeff King <peff@peff.net>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ builtin/submodule--helper.c | 6 +++---
+ t/t7400-submodule-basic.sh  | 8 ++++++++
+ 2 files changed, 11 insertions(+), 3 deletions(-)
+
+diff --git a/builtin/submodule--helper.c b/builtin/submodule--helper.c
+index b4278e3a71..25555393f1 100644
+--- a/builtin/submodule--helper.c
++++ b/builtin/submodule--helper.c
+@@ -337,12 +337,12 @@ static void init_submodule(const char *path, const char *prefix, int quiet)
+ 	strbuf_reset(&sb);
+ 	strbuf_addf(&sb, "submodule.%s.url", sub->name);
+ 	if (git_config_get_string(sb.buf, &url)) {
+-		url = xstrdup(sub->url);
+-
+-		if (!url)
++		if (!sub->url)
+ 			die(_("No url found for submodule path '%s' in .gitmodules"),
+ 				displaypath);
+ 
++		url = xstrdup(sub->url);
++
+ 		/* Possibly a url relative to parent */
+ 		if (starts_with_dot_dot_slash(url) ||
+ 		    starts_with_dot_slash(url)) {
+diff --git a/t/t7400-submodule-basic.sh b/t/t7400-submodule-basic.sh
+index b77cce8e40..db82d8d81c 100755
+--- a/t/t7400-submodule-basic.sh
++++ b/t/t7400-submodule-basic.sh
+@@ -38,6 +38,14 @@ test_expect_success 'submodule update aborts on missing .gitmodules file' '
+ 	test_i18ngrep "Submodule path .sub. not initialized" actual
+ '
+ 
++test_expect_success 'submodule update aborts on missing gitmodules url' '
++	test_when_finished "git update-index --remove sub" &&
++	git update-index --add --cacheinfo 160000,$(git rev-parse HEAD),sub &&
++	test_when_finished "rm -f .gitmodules" &&
++	git config -f .gitmodules submodule.s.path sub &&
++	test_must_fail git submodule init
++'
++
+ test_expect_success 'configuration parsing' '
+ 	test_when_finished "rm -f .gitmodules" &&
+ 	cat >.gitmodules <<-\EOF &&
+-- 
+2.19.0.605.g01d371f741
+

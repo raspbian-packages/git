@@ -1,0 +1,36 @@
+From 64c89ea6b06fda20fd2cb6973095fd377ee49d4a Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ren=C3=A9=20Scharfe?= <l.s.r@web.de>
+Date: Sat, 1 Jul 2017 11:10:07 +0200
+Subject: apply: use starts_with() in gitdiff_verify_name()
+
+Avoid running over the end of line -- a C string whose length is not
+known to this function -- by using starts_with() instead of memcmp(3)
+for checking if it starts with "/dev/null".  Also simply include the
+newline in the string constant to compare against.  Drop a comment that
+just states the obvious.
+
+Signed-off-by: Rene Scharfe <l.s.r@web.de>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+(cherry picked from commit 8bc172e5f29894d440aab772ae3a49eb2eaf5585)
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ apply.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/apply.c b/apply.c
+index 879d37a9ca..cb7abfe311 100644
+--- a/apply.c
++++ b/apply.c
+@@ -985,8 +985,7 @@ static int gitdiff_verify_name(struct apply_state *state,
+ 		}
+ 		free(another);
+ 	} else {
+-		/* expect "/dev/null" */
+-		if (memcmp("/dev/null", line, 9) || line[9] != '\n')
++		if (!starts_with(line, "/dev/null\n"))
+ 			return error(_("git apply: bad git-diff - expected /dev/null on line %d"), state->linenr);
+ 	}
+ 
+-- 
+2.26.0.292.g33ef6b2f38
+

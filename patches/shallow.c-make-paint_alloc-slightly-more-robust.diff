@@ -1,0 +1,60 @@
+From c8c5c99e6f3e9840e1c004f63ba78ca954107dba Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Nguy=E1=BB=85n=20Th=C3=A1i=20Ng=E1=BB=8Dc=20Duy?=
+ <pclouds@gmail.com>
+Date: Tue, 6 Dec 2016 19:53:36 +0700
+Subject: shallow.c: make paint_alloc slightly more robust
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+paint_alloc() allocates a big block of memory and splits it into
+smaller, fixed size, chunks of memory whenever it's called. Each chunk
+contains enough bits to present all "new refs" [1] in a fetch from a
+shallow repository.
+
+We do not check if the new "big block" is smaller than the requested
+memory chunk though. If it happens, we'll happily pass back a memory
+region smaller than expected. Which will lead to problems eventually.
+
+A normal fetch may add/update a dozen new refs. Let's stay on the
+"reasonably extreme" side and say we need 16k refs (or bits from
+paint_alloc's perspective). Each chunk of memory would be 2k, much
+smaller than the memory pool (512k).
+
+So, normally, the under-allocation situation should never happen. A bad
+guy, however, could make a fetch that adds more than 4m new/updated refs
+to this code which results in a memory chunk larger than pool size.
+Check this case and abort.
+
+Noticed-by: Rasmus Villemoes <rv@rasmusvillemoes.dk>
+Reviewed-by: Jeff King <peff@peff.net>
+
+[1] Details are in commit message of 58babff (shallow.c: the 8 steps to
+    select new commits for .git/shallow - 2013-12-05), step 6.
+
+Signed-off-by: Nguyễn Thái Ngọc Duy <pclouds@gmail.com>
+Reviewed-by: Jeff King <peff@peff.net>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+(cherry picked from commit f2386c6b77e236fc104d3a024e5d314c23a941eb)
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ shallow.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/shallow.c b/shallow.c
+index 2512ed379b..75e1702569 100644
+--- a/shallow.c
++++ b/shallow.c
+@@ -447,6 +447,9 @@ static uint32_t *paint_alloc(struct paint_info *info)
+ 	unsigned size = nr * sizeof(uint32_t);
+ 	void *p;
+ 	if (!info->pool_count || info->free + size > info->end) {
++		if (size > POOL_SIZE)
++			die("BUG: pool size too small for %d in paint_alloc()",
++			    size);
+ 		info->pool_count++;
+ 		REALLOC_ARRAY(info->pools, info->pool_count);
+ 		info->free = xmalloc(POOL_SIZE);
+-- 
+2.26.0.292.g33ef6b2f38
+

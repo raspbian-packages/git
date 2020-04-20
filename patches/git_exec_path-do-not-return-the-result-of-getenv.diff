@@ -1,0 +1,58 @@
+From 96e75a03bee4882eb58bac9c24efe729120aafcf Mon Sep 17 00:00:00 2001
+From: Jeff King <peff@peff.net>
+Date: Mon, 9 Jan 2017 01:00:12 -0500
+Subject: git_exec_path: do not return the result of getenv()
+
+The result of getenv() is not guaranteed by POSIX to last
+beyond another call to getenv(), or setenv(), etc.  We
+should duplicate the string before returning to the caller
+to avoid any surprises.
+
+We already keep a cached pointer to avoid repeatedly leaking
+the result of system_path(). We can use the same pointer
+here to avoid allocating and leaking for each call.
+
+Signed-off-by: Jeff King <peff@peff.net>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+(cherry picked from commit 007ac544011213045e3905983b4350ffec8f41f7)
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ exec_cmd.c | 17 ++++++++---------
+ 1 file changed, 8 insertions(+), 9 deletions(-)
+
+diff --git a/exec_cmd.c b/exec_cmd.c
+index 587bd7eb48..fb94aeba9c 100644
+--- a/exec_cmd.c
++++ b/exec_cmd.c
+@@ -64,20 +64,19 @@ void git_set_argv_exec_path(const char *exec_path)
+ /* Returns the highest-priority, location to look for git programs. */
+ const char *git_exec_path(void)
+ {
+-	const char *env;
+-	static char *system_exec_path;
++	static char *cached_exec_path;
+ 
+ 	if (argv_exec_path)
+ 		return argv_exec_path;
+ 
+-	env = getenv(EXEC_PATH_ENVIRONMENT);
+-	if (env && *env) {
+-		return env;
++	if (!cached_exec_path) {
++		const char *env = getenv(EXEC_PATH_ENVIRONMENT);
++		if (env && *env)
++			cached_exec_path = xstrdup(env);
++		else
++			cached_exec_path = system_path(GIT_EXEC_PATH);
+ 	}
+-
+-	if (!system_exec_path)
+-		system_exec_path = system_path(GIT_EXEC_PATH);
+-	return system_exec_path;
++	return cached_exec_path;
+ }
+ 
+ static void add_path(struct strbuf *out, const char *path)
+-- 
+2.26.0.292.g33ef6b2f38
+

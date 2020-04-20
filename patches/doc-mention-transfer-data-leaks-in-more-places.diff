@@ -1,0 +1,181 @@
+From 6478e40e03e1cc147ee301a9763c14a6de499142 Mon Sep 17 00:00:00 2001
+From: Matt McCutchen <matt@mattmccutchen.net>
+Date: Mon, 14 Nov 2016 13:20:24 -0500
+Subject: doc: mention transfer data leaks in more places
+
+The "SECURITY" section of the gitnamespaces(7) man page described two
+ways for a client to steal data from a server that wasn't intended to be
+shared. Similar attacks can be performed by a server on a client, so
+adapt the section to cover both directions and add it to the
+git-fetch(1), git-pull(1), and git-push(1) man pages. Also add
+references to this section from the documentation of server
+configuration options that attempt to control data leakage but may not
+be fully effective.
+
+Signed-off-by: Matt McCutchen <matt@mattmccutchen.net>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+(cherry picked from commit 235ec24352e151bed37063a004b9800ee0debd74)
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ Documentation/config.txt              | 17 ++++++++++++---
+ Documentation/git-fetch.txt           |  2 ++
+ Documentation/git-pull.txt            |  2 ++
+ Documentation/git-push.txt            |  2 ++
+ Documentation/gitnamespaces.txt       | 20 +-----------------
+ Documentation/transfer-data-leaks.txt | 30 +++++++++++++++++++++++++++
+ 6 files changed, 51 insertions(+), 22 deletions(-)
+ create mode 100644 Documentation/transfer-data-leaks.txt
+
+diff --git a/Documentation/config.txt b/Documentation/config.txt
+index a0ab66aae7..a7b9af06b4 100644
+--- a/Documentation/config.txt
++++ b/Documentation/config.txt
+@@ -2930,6 +2930,11 @@ is omitted from the advertisements but `refs/heads/master` and
+ `refs/namespaces/bar/refs/heads/master` are still advertised as so-called
+ "have" lines. In order to match refs before stripping, add a `^` in front of
+ the ref name. If you combine `!` and `^`, `!` must be specified first.
+++
++Even if you hide refs, a client may still be able to steal the target
++objects via the techniques described in the "SECURITY" section of the
++linkgit:gitnamespaces[7] man page; it's best to keep private data in a
++separate repository.
+ 
+ transfer.unpackLimit::
+ 	When `fetch.unpackLimit` or `receive.unpackLimit` are
+@@ -2939,7 +2944,7 @@ transfer.unpackLimit::
+ uploadarchive.allowUnreachable::
+ 	If true, allow clients to use `git archive --remote` to request
+ 	any tree, whether reachable from the ref tips or not. See the
+-	discussion in the `SECURITY` section of
++	discussion in the "SECURITY" section of
+ 	linkgit:git-upload-archive[1] for more details. Defaults to
+ 	`false`.
+ 
+@@ -2953,13 +2958,19 @@ uploadpack.allowTipSHA1InWant::
+ 	When `uploadpack.hideRefs` is in effect, allow `upload-pack`
+ 	to accept a fetch request that asks for an object at the tip
+ 	of a hidden ref (by default, such a request is rejected).
+-	see also `uploadpack.hideRefs`.
++	See also `uploadpack.hideRefs`.  Even if this is false, a client
++	may be able to steal objects via the techniques described in the
++	"SECURITY" section of the linkgit:gitnamespaces[7] man page; it's
++	best to keep private data in a separate repository.
+ 
+ uploadpack.allowReachableSHA1InWant::
+ 	Allow `upload-pack` to accept a fetch request that asks for an
+ 	object that is reachable from any ref tip. However, note that
+ 	calculating object reachability is computationally expensive.
+-	Defaults to `false`.
++	Defaults to `false`.  Even if this is false, a client may be able
++	to steal objects via the techniques described in the "SECURITY"
++	section of the linkgit:gitnamespaces[7] man page; it's best to
++	keep private data in a separate repository.
+ 
+ uploadpack.keepAlive::
+ 	When `upload-pack` has started `pack-objects`, there may be a
+diff --git a/Documentation/git-fetch.txt b/Documentation/git-fetch.txt
+index 9e4216999d..b153aefa68 100644
+--- a/Documentation/git-fetch.txt
++++ b/Documentation/git-fetch.txt
+@@ -192,6 +192,8 @@ The first command fetches the `maint` branch from the repository at
+ objects will eventually be removed by git's built-in housekeeping (see
+ linkgit:git-gc[1]).
+ 
++include::transfer-data-leaks.txt[]
++
+ BUGS
+ ----
+ Using --recurse-submodules can only fetch new commits in already checked
+diff --git a/Documentation/git-pull.txt b/Documentation/git-pull.txt
+index d033b258e5..4470e4b574 100644
+--- a/Documentation/git-pull.txt
++++ b/Documentation/git-pull.txt
+@@ -237,6 +237,8 @@ If you tried a pull which resulted in complex conflicts and
+ would want to start over, you can recover with 'git reset'.
+ 
+ 
++include::transfer-data-leaks.txt[]
++
+ BUGS
+ ----
+ Using --recurse-submodules can only fetch new commits in already checked
+diff --git a/Documentation/git-push.txt b/Documentation/git-push.txt
+index 47b77e693b..8eefabd0d1 100644
+--- a/Documentation/git-push.txt
++++ b/Documentation/git-push.txt
+@@ -559,6 +559,8 @@ Commits A and B would no longer belong to a branch with a symbolic name,
+ and so would be unreachable.  As such, these commits would be removed by
+ a `git gc` command on the origin repository.
+ 
++include::transfer-data-leaks.txt[]
++
+ GIT
+ ---
+ Part of the linkgit:git[1] suite
+diff --git a/Documentation/gitnamespaces.txt b/Documentation/gitnamespaces.txt
+index 7685e3651a..b614969ad2 100644
+--- a/Documentation/gitnamespaces.txt
++++ b/Documentation/gitnamespaces.txt
+@@ -61,22 +61,4 @@ For a simple local test, you can use linkgit:git-remote-ext[1]:
+ git clone ext::'git --namespace=foo %s /tmp/prefixed.git'
+ ----------
+ 
+-SECURITY
+---------
+-
+-Anyone with access to any namespace within a repository can potentially
+-access objects from any other namespace stored in the same repository.
+-You can't directly say "give me object ABCD" if you don't have a ref to
+-it, but you can do some other sneaky things like:
+-
+-. Claiming to push ABCD, at which point the server will optimize out the
+-  need for you to actually send it. Now you have a ref to ABCD and can
+-  fetch it (claiming not to have it, of course).
+-
+-. Requesting other refs, claiming that you have ABCD, at which point the
+-  server may generate deltas against ABCD.
+-
+-None of this causes a problem if you only host public repositories, or
+-if everyone who may read one namespace may also read everything in every
+-other namespace (for instance, if everyone in an organization has read
+-permission to every repository).
++include::transfer-data-leaks.txt[]
+diff --git a/Documentation/transfer-data-leaks.txt b/Documentation/transfer-data-leaks.txt
+new file mode 100644
+index 0000000000..914bacc39e
+--- /dev/null
++++ b/Documentation/transfer-data-leaks.txt
+@@ -0,0 +1,30 @@
++SECURITY
++--------
++The fetch and push protocols are not designed to prevent one side from
++stealing data from the other repository that was not intended to be
++shared. If you have private data that you need to protect from a malicious
++peer, your best option is to store it in another repository. This applies
++to both clients and servers. In particular, namespaces on a server are not
++effective for read access control; you should only grant read access to a
++namespace to clients that you would trust with read access to the entire
++repository.
++
++The known attack vectors are as follows:
++
++. The victim sends "have" lines advertising the IDs of objects it has that
++  are not explicitly intended to be shared but can be used to optimize the
++  transfer if the peer also has them. The attacker chooses an object ID X
++  to steal and sends a ref to X, but isn't required to send the content of
++  X because the victim already has it. Now the victim believes that the
++  attacker has X, and it sends the content of X back to the attacker
++  later. (This attack is most straightforward for a client to perform on a
++  server, by creating a ref to X in the namespace the client has access
++  to and then fetching it. The most likely way for a server to perform it
++  on a client is to "merge" X into a public branch and hope that the user
++  does additional work on this branch and pushes it back to the server
++  without noticing the merge.)
++
++. As in #1, the attacker chooses an object ID X to steal. The victim sends
++  an object Y that the attacker already has, and the attacker falsely
++  claims to have X and not Y, so the victim sends Y as a delta against X.
++  The delta reveals regions of X that are similar to Y to the attacker.
+-- 
+2.26.0.292.g33ef6b2f38
+

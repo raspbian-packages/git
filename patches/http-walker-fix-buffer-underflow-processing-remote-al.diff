@@ -1,0 +1,88 @@
+From 35090a681a8be12824281d4e52d84a45daaacb01 Mon Sep 17 00:00:00 2001
+From: Jeff King <peff@peff.net>
+Date: Mon, 13 Mar 2017 10:04:45 -0400
+Subject: http-walker: fix buffer underflow processing remote alternates
+
+If we parse a remote alternates (or http-alternates), we
+expect relative lines like:
+
+  ../../foo.git/objects
+
+which we convert into "$URL/../foo.git/" (and then use that
+as a base for fetching more objects).
+
+But if the remote feeds us nonsense like just:
+
+  ../
+
+we will try to blindly strip the last 7 characters, assuming
+they contain the string "objects". Since we don't _have_ 7
+characters at all, this results in feeding a small negative
+value to strbuf_add(), which converts it to a size_t,
+resulting in a big positive value. This should consistently
+fail (since we can't generall allocate the max size_t minus
+7 bytes), so there shouldn't be any security implications.
+
+Let's fix this by using strbuf_strip_suffix() to drop the
+characters we want. If they're not present, we'll ignore the
+alternate (in theory we could use it as-is, but the rest of
+the http-walker code unconditionally tacks "objects/" back
+on, so it is it not prepared to handle such a case).
+
+Signed-off-by: Jeff King <peff@peff.net>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+(cherry picked from commit d61434ae813cc86a1a87d05cc61e36e87b0e20a9)
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ http-walker.c | 31 +++++++++++++++++++------------
+ 1 file changed, 19 insertions(+), 12 deletions(-)
+
+diff --git a/http-walker.c b/http-walker.c
+index 25a8b1ad4b..a965694f02 100644
+--- a/http-walker.c
++++ b/http-walker.c
+@@ -269,22 +269,29 @@ static void process_alternates_response(void *callback_data)
+ 					okay = 1;
+ 				}
+ 			}
+-			/* skip "objects\n" at end */
+ 			if (okay) {
+ 				struct strbuf target = STRBUF_INIT;
+ 				strbuf_add(&target, base, serverlen);
+-				strbuf_add(&target, data + i, posn - i - 7);
+-				warning("adding alternate object store: %s",
+-					target.buf);
+-				newalt = xmalloc(sizeof(*newalt));
+-				newalt->next = NULL;
+-				newalt->base = strbuf_detach(&target, NULL);
+-				newalt->got_indices = 0;
+-				newalt->packs = NULL;
++				strbuf_add(&target, data + i, posn - i);
+ 
+-				while (tail->next != NULL)
+-					tail = tail->next;
+-				tail->next = newalt;
++				if (!strbuf_strip_suffix(&target, "objects")) {
++					warning("ignoring alternate that does"
++						" not end in 'objects': %s",
++						target.buf);
++					strbuf_release(&target);
++				} else {
++					warning("adding alternate object store: %s",
++						target.buf);
++					newalt = xmalloc(sizeof(*newalt));
++					newalt->next = NULL;
++					newalt->base = strbuf_detach(&target, NULL);
++					newalt->got_indices = 0;
++					newalt->packs = NULL;
++
++					while (tail->next != NULL)
++						tail = tail->next;
++					tail->next = newalt;
++				}
+ 			}
+ 		}
+ 		i = posn + 1;
+-- 
+2.26.0.292.g33ef6b2f38
+
