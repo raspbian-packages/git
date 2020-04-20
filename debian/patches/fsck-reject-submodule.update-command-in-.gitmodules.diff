@@ -1,0 +1,78 @@
+From 3c3047920680f0c1e91439d0a94162d9b567e9af Mon Sep 17 00:00:00 2001
+From: Jonathan Nieder <jrnieder@gmail.com>
+Date: Thu, 5 Dec 2019 01:30:43 -0800
+Subject: fsck: reject submodule.update = !command in .gitmodules
+
+commit bb92255ebe6bccd76227e023d6d0bc997e318ad0 upstream.
+
+This allows hosting providers to detect whether they are being used
+to attack users using malicious 'update = !command' settings in
+.gitmodules.
+
+Since ac1fbbda2013 (submodule: do not copy unknown update mode from
+.gitmodules, 2013-12-02), in normal cases such settings have been
+treated as 'update = none', so forbidding them should not produce any
+collateral damage to legitimate uses.  A quick search does not reveal
+any repositories making use of this construct, either.
+
+Reported-by: Joern Schneeweisz <jschneeweisz@gitlab.com>
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+Signed-off-by: Johannes Schindelin <johannes.schindelin@gmx.de>
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ fsck.c                      |  6 ++++++
+ t/t7406-submodule-update.sh | 14 ++++++++++++++
+ 2 files changed, 20 insertions(+)
+
+diff --git a/fsck.c b/fsck.c
+index 135fe8c4bc..3a65a3baaf 100644
+--- a/fsck.c
++++ b/fsck.c
+@@ -95,6 +95,7 @@ static int oidhash_contains(struct hashmap *h, const struct object_id *oid)
+ 	FUNC(GITMODULES_SYMLINK, ERROR) \
+ 	FUNC(GITMODULES_URL, ERROR) \
+ 	FUNC(GITMODULES_PATH, ERROR) \
++	FUNC(GITMODULES_UPDATE, ERROR) \
+ 	/* warnings */ \
+ 	FUNC(BAD_FILEMODE, WARN) \
+ 	FUNC(EMPTY_NAME, WARN) \
+@@ -998,6 +999,11 @@ static int fsck_gitmodules_fn(const char *var, const char *value, void *vdata)
+ 				    FSCK_MSG_GITMODULES_PATH,
+ 				    "disallowed submodule path: %s",
+ 				    value);
++	if (!strcmp(key, "update") && value && *value == '!')
++		data->ret |= report(data->options, data->obj,
++				    FSCK_MSG_GITMODULES_UPDATE,
++				    "disallowed submodule update setting: %s",
++				    value);
+ 	free(name);
+ 
+ 	return 0;
+diff --git a/t/t7406-submodule-update.sh b/t/t7406-submodule-update.sh
+index 3781809bd6..a74e7ea477 100755
+--- a/t/t7406-submodule-update.sh
++++ b/t/t7406-submodule-update.sh
+@@ -397,6 +397,20 @@ test_expect_success 'submodule update - command in .gitmodules is ignored' '
+ 	git -C super submodule update submodule
+ '
+ 
++test_expect_success 'fsck detects command in .gitmodules' '
++	git init command-in-gitmodules &&
++	(
++		cd command-in-gitmodules &&
++		git submodule add ../submodule submodule &&
++		test_commit adding-submodule &&
++
++		git config -f .gitmodules submodule.submodule.update "!false" &&
++		git add .gitmodules &&
++		test_commit configuring-update &&
++		test_must_fail git fsck
++	)
++'
++
+ cat << EOF >expect
+ Execution of 'false $submodulesha1' failed in submodule path 'submodule'
+ EOF
+-- 
+2.24.0.393.g34dc348eaf
+

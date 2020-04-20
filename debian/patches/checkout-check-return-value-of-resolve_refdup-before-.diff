@@ -1,0 +1,36 @@
+From 9e97376a8583496d834a76c3b28e56f807d84778 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ren=C3=A9=20Scharfe?= <l.s.r@web.de>
+Date: Sat, 6 May 2017 19:13:52 +0200
+Subject: checkout: check return value of resolve_refdup before using hash
+
+If resolve_refdup() fails it returns NULL and possibly leaves its hash
+output parameter untouched.  Make sure to use it only if the function
+succeeded, in order to avoid accessing uninitialized memory.
+
+Found with t/t2011-checkout-invalid-head.sh --valgrind.
+
+Signed-off-by: Rene Scharfe <l.s.r@web.de>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+(cherry picked from commit 79e913c24aa37d0ede9ed9e8962a19634ae5129a)
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ builtin/checkout.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/builtin/checkout.c b/builtin/checkout.c
+index 512492aad9..8d3bb33c42 100644
+--- a/builtin/checkout.c
++++ b/builtin/checkout.c
+@@ -811,7 +811,8 @@ static int switch_branches(const struct checkout_opts *opts,
+ 	int flag, writeout_error = 0;
+ 	memset(&old, 0, sizeof(old));
+ 	old.path = path_to_free = resolve_refdup("HEAD", 0, rev.hash, &flag);
+-	old.commit = lookup_commit_reference_gently(rev.hash, 1);
++	if (old.path)
++		old.commit = lookup_commit_reference_gently(rev.hash, 1);
+ 	if (!(flag & REF_ISSYMREF))
+ 		old.path = NULL;
+ 
+-- 
+2.26.0.292.g33ef6b2f38
+

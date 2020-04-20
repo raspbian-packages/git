@@ -1,0 +1,73 @@
+From 493c53b15cda2c260bac6657d5e3fb1c5715bde6 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Nguy=E1=BB=85n=20Th=C3=A1i=20Ng=E1=BB=8Dc=20Duy?=
+ <pclouds@gmail.com>
+Date: Tue, 6 Dec 2016 19:53:34 +0700
+Subject: shallow.c: rename fields in paint_info to better express their
+ purposes
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+paint_alloc() is basically malloc(), tuned for allocating a fixed number
+of bits on every call without worrying about freeing any individual
+allocation since all will be freed at the end. It does it by allocating
+a big block of memory every time it runs out of "free memory". "slab" is
+a poor choice of name, at least poorer than "pool".
+
+Signed-off-by: Nguyễn Thái Ngọc Duy <pclouds@gmail.com>
+Reviewed-by: Jeff King <peff@peff.net>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+(cherry picked from commit 0afd307ab403404f7cf775fc5042f527e8289980)
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ shallow.c | 18 +++++++++---------
+ 1 file changed, 9 insertions(+), 9 deletions(-)
+
+diff --git a/shallow.c b/shallow.c
+index 4d0b005d39..8100dfd6f2 100644
+--- a/shallow.c
++++ b/shallow.c
+@@ -434,9 +434,9 @@ define_commit_slab(ref_bitmap, uint32_t *);
+ struct paint_info {
+ 	struct ref_bitmap ref_bitmap;
+ 	unsigned nr_bits;
+-	char **slab;
++	char **pools;
+ 	char *free, *end;
+-	unsigned slab_count;
++	unsigned pool_count;
+ };
+ 
+ static uint32_t *paint_alloc(struct paint_info *info)
+@@ -444,11 +444,11 @@ static uint32_t *paint_alloc(struct paint_info *info)
+ 	unsigned nr = (info->nr_bits + 31) / 32;
+ 	unsigned size = nr * sizeof(uint32_t);
+ 	void *p;
+-	if (!info->slab_count || info->free + size > info->end) {
+-		info->slab_count++;
+-		REALLOC_ARRAY(info->slab, info->slab_count);
++	if (!info->pool_count || info->free + size > info->end) {
++		info->pool_count++;
++		REALLOC_ARRAY(info->pools, info->pool_count);
+ 		info->free = xmalloc(COMMIT_SLAB_SIZE);
+-		info->slab[info->slab_count - 1] = info->free;
++		info->pools[info->pool_count - 1] = info->free;
+ 		info->end = info->free + COMMIT_SLAB_SIZE;
+ 	}
+ 	p = info->free;
+@@ -624,9 +624,9 @@ void assign_shallow_commits_to_refs(struct shallow_info *info,
+ 		post_assign_shallow(info, &pi.ref_bitmap, ref_status);
+ 
+ 	clear_ref_bitmap(&pi.ref_bitmap);
+-	for (i = 0; i < pi.slab_count; i++)
+-		free(pi.slab[i]);
+-	free(pi.slab);
++	for (i = 0; i < pi.pool_count; i++)
++		free(pi.pools[i]);
++	free(pi.pools);
+ 	free(shallow);
+ }
+ 
+-- 
+2.26.0.292.g33ef6b2f38
+

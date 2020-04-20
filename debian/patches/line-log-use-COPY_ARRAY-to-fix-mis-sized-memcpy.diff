@@ -1,0 +1,48 @@
+From 09e2d76442463748c59783d16552b6e6213bc1f9 Mon Sep 17 00:00:00 2001
+From: Vegard Nossum <vegard.nossum@oracle.com>
+Date: Sun, 5 Mar 2017 06:44:46 -0500
+Subject: line-log: use COPY_ARRAY to fix mis-sized memcpy
+
+This memcpy meant to get the sizeof a "struct range", not a
+"range_set", as the former is what our array holds. Rather
+than swap out the types, let's convert this site to
+COPY_ARRAY, which avoids the problem entirely (and confirms
+that the src and dst types match).
+
+Note for curiosity's sake that this bug doesn't trigger on
+I32LP64 systems, but does on ILP32 systems. The mistaken
+"struct range_set" has two ints and a pointer. That's 16
+bytes on LP64, or 12 on ILP32. The correct "struct range"
+type has two longs, which is also 16 on LP64, but only 8 on
+ILP32.
+
+Likewise an IL32P64 system would experience the bug.
+
+Signed-off-by: Jeff King <peff@peff.net>
+Signed-off-by: Vegard Nossum <vegard.nossum@oracle.com>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+(cherry picked from commit 07f546cda5d818780821a371f011eb253646ddc3)
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ line-log.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/line-log.c b/line-log.c
+index 65f3558b3b..a2477f6012 100644
+--- a/line-log.c
++++ b/line-log.c
+@@ -43,9 +43,10 @@ void range_set_release(struct range_set *rs)
+ static void range_set_copy(struct range_set *dst, struct range_set *src)
+ {
+ 	range_set_init(dst, src->nr);
+-	memcpy(dst->ranges, src->ranges, src->nr*sizeof(struct range_set));
++	COPY_ARRAY(dst->ranges, src->ranges, src->nr);
+ 	dst->nr = src->nr;
+ }
++
+ static void range_set_move(struct range_set *dst, struct range_set *src)
+ {
+ 	range_set_release(dst);
+-- 
+2.26.0.292.g33ef6b2f38
+

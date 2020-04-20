@@ -1,0 +1,44 @@
+From 1c395d2682ebde89c451eec85b1324155d50398f Mon Sep 17 00:00:00 2001
+From: Johannes Schindelin <johannes.schindelin@gmx.de>
+Date: Mon, 2 Jan 2017 17:22:33 +0100
+Subject: git_exec_path: avoid Coverity warning about unfree()d result
+
+Technically, it is correct that git_exec_path() returns a possibly
+malloc()ed string returned from system_path(), and it is sometimes
+not allocated.  Cache the result in a static variable and make sure
+that we call system_path() only once, which plugs a potential leak.
+
+Signed-off-by: Johannes Schindelin <johannes.schindelin@gmx.de>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+(cherry picked from commit c9bb5d101ca657fa466afa8c4368c43ea7b7aca8)
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ exec_cmd.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/exec_cmd.c b/exec_cmd.c
+index 19ac2146d0..587bd7eb48 100644
+--- a/exec_cmd.c
++++ b/exec_cmd.c
+@@ -65,6 +65,7 @@ void git_set_argv_exec_path(const char *exec_path)
+ const char *git_exec_path(void)
+ {
+ 	const char *env;
++	static char *system_exec_path;
+ 
+ 	if (argv_exec_path)
+ 		return argv_exec_path;
+@@ -74,7 +75,9 @@ const char *git_exec_path(void)
+ 		return env;
+ 	}
+ 
+-	return system_path(GIT_EXEC_PATH);
++	if (!system_exec_path)
++		system_exec_path = system_path(GIT_EXEC_PATH);
++	return system_exec_path;
+ }
+ 
+ static void add_path(struct strbuf *out, const char *path)
+-- 
+2.26.0.292.g33ef6b2f38
+

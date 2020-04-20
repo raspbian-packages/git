@@ -1,0 +1,46 @@
+From 1742900c4cce993203d088f16a751073547ec350 Mon Sep 17 00:00:00 2001
+From: Stefan Beller <sbeller@google.com>
+Date: Tue, 26 Sep 2017 12:54:13 -0700
+Subject: t7406: submodule.<name>.update command must not be run from
+ .gitmodules
+
+commit 83a17fa83b24ed713e2c2647bf89dae171971b73 upstream.
+
+submodule.<name>.update can be assigned an arbitrary command via setting
+it to "!command". When this command is found in the regular config, Git
+ought to just run that command instead of other update mechanisms.
+
+However if that command is just found in the .gitmodules file, it is
+potentially untrusted, which is why we do not run it.  Add a test
+confirming the behavior.
+
+Suggested-by: Jonathan Nieder <jrnieder@gmail.com>
+Signed-off-by: Stefan Beller <sbeller@google.com>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ t/t7406-submodule-update.sh | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/t/t7406-submodule-update.sh b/t/t7406-submodule-update.sh
+index 64f322c4cc..b957b97370 100755
+--- a/t/t7406-submodule-update.sh
++++ b/t/t7406-submodule-update.sh
+@@ -389,6 +389,14 @@ test_expect_success 'submodule update - command in .git/config' '
+ 	)
+ '
+ 
++test_expect_success 'submodule update - command in .gitmodules is ignored' '
++	test_when_finished "git -C super reset --hard HEAD^" &&
++	git -C super config -f .gitmodules submodule.submodule.update "!false" &&
++	git -C super commit -a -m "add command to .gitmodules file" &&
++	git -C super/submodule reset --hard $submodulesha1^ &&
++	git -C super submodule update submodule
++'
++
+ cat << EOF >expect
+ Execution of 'false $submodulesha1' failed in submodule path 'submodule'
+ EOF
+-- 
+2.24.0.393.g34dc348eaf
+

@@ -1,0 +1,156 @@
+From c38425767626d95f18be3515dc5aa46d1baf318c Mon Sep 17 00:00:00 2001
+From: Jeff King <peff@peff.net>
+Date: Tue, 6 Dec 2016 13:24:45 -0500
+Subject: http: treat http-alternates like redirects
+
+The previous commit made HTTP redirects more obvious and
+tightened up the default behavior. However, there's another
+way for a server to ask a git client to fetch arbitrary
+content: by having an http-alternates file (or a regular
+alternates file, which is used as a backup).
+
+Similar to the HTTP redirect case, a malicious server can
+claim to have refs pointing at object X, return a 404 when
+the client asks for X, but point to some other URL via
+http-alternates, which the client will transparently fetch.
+The end result is that it looks from the user's perspective
+like the objects came from the malicious server, as the
+other URL is not mentioned at all.
+
+Worse, because we feed the new URL to curl ourselves, the
+usual protocol restrictions do not kick in (neither curl's
+default of disallowing file://, nor the protocol
+whitelisting in f4113cac0 (http: limit redirection to
+protocol-whitelist, 2015-09-22).
+
+Let's apply the same rules here as we do for HTTP redirects.
+Namely:
+
+  - unless http.followRedirects is set to "always", we will
+    not follow remote redirects from http-alternates (or
+    alternates) at all
+
+  - set CURLOPT_PROTOCOLS alongside CURLOPT_REDIR_PROTOCOLS
+    restrict ourselves to a known-safe set and respect any
+    user-provided whitelist.
+
+  - mention alternate object stores on stderr so that the
+    user is aware another source of objects may be involved
+
+The first item may prove to be too restrictive. The most
+common use of alternates is to point to another path on the
+same server. While it's possible for a single-server
+redirect to be an attack, it takes a fairly obscure setup
+(victim and evil repository on the same host, host speaks
+dumb http, and evil repository has access to edit its own
+http-alternates file).
+
+So we could make the checks more specific, and only cover
+cross-server redirects. But that means parsing the URLs
+ourselves, rather than letting curl handle them. This patch
+goes for the simpler approach. Given that they are only used
+with dumb http, http-alternates are probably pretty rare.
+And there's an escape hatch: the user can allow redirects on
+a specific server by setting http.<url>.followRedirects to
+"always".
+
+Reported-by: Jann Horn <jannh@google.com>
+Signed-off-by: Jeff King <peff@peff.net>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+(cherry picked from commit cb4d2d35c4622ec2513c1c352d30ff8f9f9cdb9e)
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ http-walker.c              |  8 +++++---
+ http.c                     |  1 +
+ t/t5550-http-fetch-dumb.sh | 38 ++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 44 insertions(+), 3 deletions(-)
+
+diff --git a/http-walker.c b/http-walker.c
+index 0b2425531a..25a8b1ad4b 100644
+--- a/http-walker.c
++++ b/http-walker.c
+@@ -274,9 +274,8 @@ static void process_alternates_response(void *callback_data)
+ 				struct strbuf target = STRBUF_INIT;
+ 				strbuf_add(&target, base, serverlen);
+ 				strbuf_add(&target, data + i, posn - i - 7);
+-				if (walker->get_verbosely)
+-					fprintf(stderr, "Also look at %s\n",
+-						target.buf);
++				warning("adding alternate object store: %s",
++					target.buf);
+ 				newalt = xmalloc(sizeof(*newalt));
+ 				newalt->next = NULL;
+ 				newalt->base = strbuf_detach(&target, NULL);
+@@ -302,6 +301,9 @@ static void fetch_alternates(struct walker *walker, const char *base)
+ 	struct alternates_request alt_req;
+ 	struct walker_data *cdata = walker->data;
+ 
++	if (http_follow_config != HTTP_FOLLOW_ALWAYS)
++		return;
++
+ 	/*
+ 	 * If another request has already started fetching alternates,
+ 	 * wait for them to arrive and return to processing this request's
+diff --git a/http.c b/http.c
+index 503340962d..06b3981340 100644
+--- a/http.c
++++ b/http.c
+@@ -745,6 +745,7 @@ static CURL *get_curl_handle(void)
+ 	if (is_transport_allowed("ftps"))
+ 		allowed_protocols |= CURLPROTO_FTPS;
+ 	curl_easy_setopt(result, CURLOPT_REDIR_PROTOCOLS, allowed_protocols);
++	curl_easy_setopt(result, CURLOPT_PROTOCOLS, allowed_protocols);
+ #else
+ 	if (transport_restrict_protocols())
+ 		warning("protocol restrictions not applied to curl redirects because\n"
+diff --git a/t/t5550-http-fetch-dumb.sh b/t/t5550-http-fetch-dumb.sh
+index 532507b7ca..264a1ab8b0 100755
+--- a/t/t5550-http-fetch-dumb.sh
++++ b/t/t5550-http-fetch-dumb.sh
+@@ -330,5 +330,43 @@ test_expect_success 'http.followRedirects defaults to "initial"' '
+ 	test_must_fail git clone $HTTPD_URL/redir-objects/repo.git default
+ '
+ 
++# The goal is for a clone of the "evil" repository, which has no objects
++# itself, to cause the client to fetch objects from the "victim" repository.
++test_expect_success 'set up evil alternates scheme' '
++	victim=$HTTPD_DOCUMENT_ROOT_PATH/victim.git &&
++	git init --bare "$victim" &&
++	git -C "$victim" --work-tree=. commit --allow-empty -m secret &&
++	git -C "$victim" repack -ad &&
++	git -C "$victim" update-server-info &&
++	sha1=$(git -C "$victim" rev-parse HEAD) &&
++
++	evil=$HTTPD_DOCUMENT_ROOT_PATH/evil.git &&
++	git init --bare "$evil" &&
++	# do this by hand to avoid object existence check
++	printf "%s\\t%s\\n" $sha1 refs/heads/master >"$evil/info/refs"
++'
++
++# Here we'll just redirect via HTTP. In a real-world attack these would be on
++# different servers, but we should reject it either way.
++test_expect_success 'http-alternates is a non-initial redirect' '
++	echo "$HTTPD_URL/dumb/victim.git/objects" \
++		>"$evil/objects/info/http-alternates" &&
++	test_must_fail git -c http.followRedirects=initial \
++		clone $HTTPD_URL/dumb/evil.git evil-initial &&
++	git -c http.followRedirects=true \
++		clone $HTTPD_URL/dumb/evil.git evil-initial
++'
++
++# Curl supports a lot of protocols that we'd prefer not to allow
++# http-alternates to use, but it's hard to test whether curl has
++# accessed, say, the SMTP protocol, because we are not running an SMTP server.
++# But we can check that it does not allow access to file://, which would
++# otherwise allow this clone to complete.
++test_expect_success 'http-alternates cannot point at funny protocols' '
++	echo "file://$victim/objects" >"$evil/objects/info/http-alternates" &&
++	test_must_fail git -c http.followRedirects=true \
++		clone "$HTTPD_URL/dumb/evil.git" evil-file
++'
++
+ stop_httpd
+ test_done
+-- 
+2.26.0.292.g33ef6b2f38
+
