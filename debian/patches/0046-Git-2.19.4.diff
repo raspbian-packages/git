@@ -1,0 +1,27 @@
+From 0e6e595cbdf95d46762a231bc6b5c9f222abb561 Mon Sep 17 00:00:00 2001
+From: Junio C Hamano <gitster@pobox.com>
+Date: Tue, 17 Mar 2020 13:37:37 -0700
+Subject: Git 2.19.4
+
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+(cherry picked from commit a5979d7009017c79b0100b7b66e8567b3ad7b022)
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ Documentation/RelNotes/2.19.4.txt | 5 +++++
+ 1 file changed, 5 insertions(+)
+ create mode 100644 Documentation/RelNotes/2.19.4.txt
+
+diff --git a/Documentation/RelNotes/2.19.4.txt b/Documentation/RelNotes/2.19.4.txt
+new file mode 100644
+index 0000000000..35d0ae561b
+--- /dev/null
++++ b/Documentation/RelNotes/2.19.4.txt
+@@ -0,0 +1,5 @@
++Git v2.19.4 Release Notes
++=========================
++
++This release merges the security fix that appears in v2.17.4; see
++the release notes for that version for details.
+-- 
+2.26.0.292.g33ef6b2f38
+
