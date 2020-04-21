@@ -9,6 +9,7 @@
 #include "url.h"
 #include "string-list.h"
 #include "sha1-array.h"
+#include "transport.h"
 
 static char *server_capabilities;
 static const char *parse_feature_value(const char *, const char *, int *);
@@ -673,6 +674,8 @@ struct child_process *git_connect(int fd[2], const char *url,
 		printf("Diag: path=%s\n", path ? path : "NULL");
 		conn = NULL;
 	} else if (protocol == PROTO_GIT) {
+		transport_check_allowed("git");
+
 		/* These underlying connection commands die() if they
 		 * cannot connect.
 		 */
@@ -706,6 +709,7 @@ struct child_process *git_connect(int fd[2], const char *url,
 			int putty = ssh && strcasestr(ssh, "plink");
 			char *ssh_host = hostandport;
 			const char *port = NULL;
+			transport_check_allowed("ssh");
 			get_host_and_port(&ssh_host, &port);
 			port = get_port_numeric(port);
 
@@ -724,6 +728,7 @@ struct child_process *git_connect(int fd[2], const char *url,
 			/* remove repo-local variables from the environment */
 			conn->env = local_repo_env;
 			conn->use_shell = 1;
+			transport_check_allowed("file");
 		}
 		argv_array_push(&conn->args, cmd.buf);
 
