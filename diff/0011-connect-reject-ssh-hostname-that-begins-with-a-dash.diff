@@ -1,0 +1,60 @@
+From e23d79c196997830b5883b8b4dceb9ca98a47af5 Mon Sep 17 00:00:00 2001
+From: Junio C Hamano <junio@pobox.com>
+Date: Wed, 26 Jul 2017 10:24:20 -0700
+Subject: connect: reject ssh hostname that begins with a dash
+
+commit 820d7650cc670d3e4195aad3a5343158c316e8fa upstream.
+
+When commands like "git fetch" talk with ssh://$rest_of_URL/, the
+code splits $rest_of_URL into components like host, port, etc., and
+then spawns the underlying "ssh" program by formulating argv[] array
+that has:
+
+ - the path to ssh command taken from GIT_SSH_COMMAND, etc.
+
+ - dashed options like '-batch' (for Tortoise), '-p <port>' as
+   needed.
+
+ - ssh_host, which is supposed to be the hostname parsed out of
+   $rest_of_URL.
+
+ - then the command to be run on the other side, e.g. git
+   upload-pack.
+
+If the ssh_host ends up getting '-<anything>', the argv[] that is
+used to spawn the command becomes something like:
+
+    { "ssh", "-p", "22", "-<anything>", "command", "to", "run", NULL }
+
+which obviously is bogus, but depending on the actual value of
+"<anything>", will make "ssh" parse and use it as an option.
+
+Prevent this by forbidding ssh_host that begins with a "-".
+
+Noticed-by: Joern Schneeweisz of Recurity Labs
+Reported-by: Brian at GitLab
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+Reviewed-by: Jeff King <peff@peff.net>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ connect.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/connect.c b/connect.c
+index 4cfeba2dd1..190ab28b62 100644
+--- a/connect.c
++++ b/connect.c
+@@ -442,6 +442,9 @@ struct child_process *git_connect(int fd[2], const char *url,
+ 			get_host_and_port(&ssh_host, &port);
+ 			port = get_port_numeric(port);
+ 
++			if (ssh_host[0] == '-')
++				die("strange hostname '%s' blocked", ssh_host);
++
+ 			if (!ssh) ssh = "ssh";
+ 
+ 			argv_array_push(&conn->args, ssh);
+-- 
+2.14.0.434.g98096fd7a8
+

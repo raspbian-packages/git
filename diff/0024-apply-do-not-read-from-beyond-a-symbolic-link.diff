@@ -1,0 +1,64 @@
+From 13541c7f65777f4f6b24dbbd375061040270eb39 Mon Sep 17 00:00:00 2001
+From: Junio C Hamano <gitster@pobox.com>
+Date: Fri, 30 Jan 2015 15:34:13 -0800
+Subject: apply: do not read from beyond a symbolic link
+
+commit fdc2c3a926c21e24986677abd02c8bc568a5de32 upstream.
+
+We should reject a patch, whether it renames/copies dir/file to
+elsewhere with or without modificiation, or updates dir/file in
+place, if "dir/" part is actually a symbolic link to elsewhere,
+by making sure that the code to read the preimage does not read
+from a path that is beyond a symbolic link.
+
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ builtin/apply.c                 |  2 ++
+ t/t4122-apply-symlink-inside.sh | 19 +++++++++++++++++++
+ 2 files changed, 21 insertions(+)
+
+diff --git a/builtin/apply.c b/builtin/apply.c
+index 55d632fed3..e2f2709309 100644
+--- a/builtin/apply.c
++++ b/builtin/apply.c
+@@ -3210,6 +3210,8 @@ static int load_patch_target(struct strbuf *buf,
+ 				return read_file_or_gitlink(ce, buf);
+ 			else
+ 				return SUBMODULE_PATCH_WITHOUT_INDEX;
++		} else if (has_symlink_leading_path(name, strlen(name))) {
++			return error(_("reading from '%s' beyond a symbolic link"), name);
+ 		} else {
+ 			if (read_old_data(st, name, buf))
+ 				return error(_("read of %s failed"), name);
+diff --git a/t/t4122-apply-symlink-inside.sh b/t/t4122-apply-symlink-inside.sh
+index 70b3a06e1d..035c080581 100755
+--- a/t/t4122-apply-symlink-inside.sh
++++ b/t/t4122-apply-symlink-inside.sh
+@@ -52,4 +52,23 @@ test_expect_success 'check result' '
+ 
+ '
+ 
++test_expect_success SYMLINKS 'do not read from beyond symbolic link' '
++	git reset --hard &&
++	mkdir -p arch/x86_64/dir &&
++	>arch/x86_64/dir/file &&
++	git add arch/x86_64/dir/file &&
++	echo line >arch/x86_64/dir/file &&
++	git diff >patch &&
++	git reset --hard &&
++
++	mkdir arch/i386/dir &&
++	>arch/i386/dir/file &&
++	ln -s ../i386/dir arch/x86_64/dir &&
++
++	test_must_fail git apply patch &&
++	test_must_fail git apply --cached patch &&
++	test_must_fail git apply --index patch
++
++'
++
+ test_done
+-- 
+2.17.0.921.gf22659ad46
+

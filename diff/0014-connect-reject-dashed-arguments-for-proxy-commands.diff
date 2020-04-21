@@ -1,0 +1,75 @@
+From ec596bfd9c60ba21fbb0dfdf4eaa1778a96d6f4f Mon Sep 17 00:00:00 2001
+From: Jeff King <peff@peff.net>
+Date: Fri, 28 Jul 2017 15:26:50 -0400
+Subject: connect: reject dashed arguments for proxy commands
+
+commit 3be4cf09cd3d0747af3ecdb8dc3962a0969b731e upstream.
+
+If you have a GIT_PROXY_COMMAND configured, we will run it
+with the host/port on the command-line. If a URL contains a
+mischievous host like "--foo", we don't know how the proxy
+command may handle it. It's likely to break, but it may also
+do something dangerous and unwanted (technically it could
+even do something useful, but that seems unlikely).
+
+We should err on the side of caution and reject this before
+we even run the command.
+
+The hostname check matches the one we do in a similar
+circumstance for ssh. The port check is not present for ssh,
+but there it's not necessary because the syntax is "-p
+<port>", and there's no ambiguity on the parsing side.
+
+It's not clear whether you can actually get a negative port
+to the proxy here or not. Doing:
+
+  git fetch git://remote:-1234/repo.git
+
+keeps the "-1234" as part of the hostname, with the default
+port of 9418. But it's a good idea to keep this check close
+to the point of running the command to make it clear that
+there's no way to circumvent it (and at worst it serves as a
+belt-and-suspenders check).
+
+Signed-off-by: Jeff King <peff@peff.net>
+Reviewed-by: Jonathan Nieder <jrnieder@gmail.com>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ t/t5532-fetch-proxy.sh | 5 +++++
+ tcp.c                  | 5 +++++
+ 2 files changed, 10 insertions(+)
+
+diff --git a/t/t5532-fetch-proxy.sh b/t/t5532-fetch-proxy.sh
+index 5531bd1af4..d3b2651b61 100755
+--- a/t/t5532-fetch-proxy.sh
++++ b/t/t5532-fetch-proxy.sh
+@@ -40,4 +40,9 @@ test_expect_success 'fetch through proxy works' '
+ 	test_cmp expect actual
+ '
+ 
++test_expect_success 'funny hostnames are rejected before running proxy' '
++	test_must_fail git fetch git://-remote/repo.git 2>stderr &&
++	! grep "proxying for" stderr
++'
++
+ test_done
+diff --git a/tcp.c b/tcp.c
+index 46739ddce7..db50fa9be2 100644
+--- a/tcp.c
++++ b/tcp.c
+@@ -245,6 +245,11 @@ struct child_process *git_proxy_connect(int fd[2], char *host)
+ 
+ 	get_host_and_port(&host, &port);
+ 
++	if (looks_like_command_line_option(host))
++		die("strange hostname '%s' blocked", host);
++	if (looks_like_command_line_option(port))
++		die("strange port '%s' blocked", port);
++
+ 	proxy = xcalloc(1, sizeof(*proxy));
+ 	argv_array_push(&proxy->args, git_proxy_command);
+ 	argv_array_push(&proxy->args, host);
+-- 
+2.14.0.434.g98096fd7a8
+
