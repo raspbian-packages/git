@@ -1,0 +1,39 @@
+From 477501057ec3824c45632ee8b1a9aff693f39627 Mon Sep 17 00:00:00 2001
+From: Jeff King <peff@peff.net>
+Date: Fri, 28 Jul 2017 15:23:32 -0400
+Subject: t5813: add test for hostname starting with dash
+
+commit 2d90add5ad216807ec1433e5367fae730e74a4cb upstream.
+
+Per the explanation in the previous patch, this should be
+(and is) rejected.
+
+Signed-off-by: Jeff King <peff@peff.net>
+Reviewed-by: Jonathan Nieder <jrnieder@gmail.com>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ t/t5813-proto-disable-ssh.sh | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/t/t5813-proto-disable-ssh.sh b/t/t5813-proto-disable-ssh.sh
+index ad877d774a..68befc459c 100644
+--- a/t/t5813-proto-disable-ssh.sh
++++ b/t/t5813-proto-disable-ssh.sh
+@@ -17,4 +17,13 @@ test_proto "host:path" ssh "remote:repo.git"
+ test_proto "ssh://" ssh "ssh://remote/$PWD/remote/repo.git"
+ test_proto "git+ssh://" ssh "git+ssh://remote/$PWD/remote/repo.git"
+ 
++# Don't even bother setting up a "-remote" directory, as ssh would generally
++# complain about the bogus option rather than completing our request. Our
++# fake wrapper actually _can_ handle this case, but it's more robust to
++# simply confirm from its output that it did not run at all.
++test_expect_success 'hostnames starting with dash are rejected' '
++	test_must_fail git clone ssh://-remote/repo.git dash-host 2>stderr &&
++	! grep ^ssh: stderr
++'
++
+ test_done
+-- 
+2.14.0.434.g98096fd7a8
+

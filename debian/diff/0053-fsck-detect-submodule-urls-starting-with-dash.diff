@@ -1,0 +1,73 @@
+From 550e8a8d73c6435d5fd47bf0a9e45ec82d4346e5 Mon Sep 17 00:00:00 2001
+From: Jeff King <peff@peff.net>
+Date: Mon, 24 Sep 2018 04:37:17 -0400
+Subject: fsck: detect submodule urls starting with dash
+
+commit a124133e1e6ab5c7a9fef6d0e6bcb084e3455b46 upstream.
+
+Urls with leading dashes can cause mischief on older
+versions of Git. We should detect them so that they can be
+rejected by receive.fsckObjects, preventing modern versions
+of git from being a vector by which attacks can spread.
+
+[jn: backported to 2.1.y: using error_func instead of report
+ to report fsck errors]
+
+Signed-off-by: Jeff King <peff@peff.net>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ fsck.c                        |  5 +++++
+ t/t7416-submodule-dash-url.sh | 15 +++++++++++++++
+ 2 files changed, 20 insertions(+)
+
+diff --git a/fsck.c b/fsck.c
+index 718235f52e..104ef7189d 100644
+--- a/fsck.c
++++ b/fsck.c
+@@ -434,6 +434,11 @@ static int fsck_gitmodules_fn(const char *var, const char *value, void *vdata)
+ 		data->ret += data->error_func(data->obj, FSCK_ERROR,
+ 					      "disallowed submodule name: %s",
+ 					      name);
++	if (!strcmp(key, "url") && value &&
++	    looks_like_command_line_option(value))
++		data->ret += data->error_func(data->obj, FSCK_ERROR,
++					      "disallowed submodule url: %s",
++					      value);
+ 	free(name);
+ 
+ 	return 0;
+diff --git a/t/t7416-submodule-dash-url.sh b/t/t7416-submodule-dash-url.sh
+index 74c913d1c8..b277aece29 100755
+--- a/t/t7416-submodule-dash-url.sh
++++ b/t/t7416-submodule-dash-url.sh
+@@ -20,6 +20,13 @@ test_expect_success 'clone can recurse submodule' '
+ 	test_cmp expect actual
+ '
+ 
++test_expect_success 'fsck accepts protected dash' '
++	test_when_finished "rm -rf dst" &&
++	git init --bare dst &&
++	git -C dst config transfer.fsckObjects true &&
++	git push dst HEAD
++'
++
+ test_expect_success 'remove ./ protection from .gitmodules url' '
+ 	perl -i -pe "s{\./}{}" .gitmodules &&
+ 	git commit -am "drop protection"
+@@ -31,4 +38,12 @@ test_expect_success 'clone rejects unprotected dash' '
+ 	test_i18ngrep "may be interpreted as a command-line option" err
+ '
+ 
++test_expect_success 'fsck rejects unprotected dash' '
++	test_when_finished "rm -rf dst" &&
++	git init --bare dst &&
++	git -C dst config transfer.fsckObjects true &&
++	test_must_fail git push dst HEAD 2>err &&
++	test_i18ngrep "disallowed submodule url" err
++'
++
+ test_done
+-- 
+2.19.0.605.g01d371f741
+

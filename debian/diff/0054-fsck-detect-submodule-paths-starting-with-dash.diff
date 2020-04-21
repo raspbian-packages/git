@@ -1,0 +1,83 @@
+From ccb86ddd57c7857b84e9add71f0467781f0f4159 Mon Sep 17 00:00:00 2001
+From: Jeff King <peff@peff.net>
+Date: Mon, 24 Sep 2018 04:42:19 -0400
+Subject: fsck: detect submodule paths starting with dash
+
+commit 1a7fd1fb2998002da6e9ff2ee46e1bdd25ee8404 upstream.
+
+As with urls, submodule paths with dashes are ignored by
+git, but may end up confusing older versions. Detecting them
+via fsck lets us prevent modern versions of git from being a
+vector to spread broken .gitmodules to older versions.
+
+Compared to blocking leading-dash urls, though, this
+detection may be less of a good idea:
+
+  1. While such paths provide confusing and broken results,
+     they don't seem to actually work as option injections
+     against anything except "cd". In particular, the
+     submodule code seems to canonicalize to an absolute
+     path before running "git clone" (so it passes
+     /your/clone/-sub).
+
+  2. It's more likely that we may one day make such names
+     actually work correctly. Even after we revert this fsck
+     check, it will continue to be a hassle until hosting
+     servers are all updated.
+
+On the other hand, it's not entirely clear that the behavior
+in older versions is safe. And if we do want to eventually
+allow this, we may end up doing so with a special syntax
+anyway (e.g., writing "./-sub" in the .gitmodules file, and
+teaching the submodule code to canonicalize it when
+comparing).
+
+So on balance, this is probably a good protection.
+
+[jn: backported to 2.1.y: using error_func instead of report
+ to report fsck errors]
+
+Signed-off-by: Jeff King <peff@peff.net>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ fsck.c                        | 5 +++++
+ t/t7417-submodule-path-url.sh | 8 ++++++++
+ 2 files changed, 13 insertions(+)
+
+diff --git a/fsck.c b/fsck.c
+index 104ef7189d..3bb73aa11a 100644
+--- a/fsck.c
++++ b/fsck.c
+@@ -439,6 +439,11 @@ static int fsck_gitmodules_fn(const char *var, const char *value, void *vdata)
+ 		data->ret += data->error_func(data->obj, FSCK_ERROR,
+ 					      "disallowed submodule url: %s",
+ 					      value);
++	if (!strcmp(key, "path") && value &&
++	    looks_like_command_line_option(value))
++		data->ret += data->error_func(data->obj, FSCK_ERROR,
++					      "disallowed submodule path: %s",
++					      value);
+ 	free(name);
+ 
+ 	return 0;
+diff --git a/t/t7417-submodule-path-url.sh b/t/t7417-submodule-path-url.sh
+index 1f43f1300b..e682c232bb 100755
+--- a/t/t7417-submodule-path-url.sh
++++ b/t/t7417-submodule-path-url.sh
+@@ -17,4 +17,12 @@ test_expect_success 'clone rejects unprotected dash' '
+ 	test_i18ngrep "may be interpreted as a command-line option" err
+ '
+ 
++test_expect_success 'fsck rejects unprotected dash' '
++	test_when_finished "rm -rf dst" &&
++	git init --bare dst &&
++	git -C dst config transfer.fsckObjects true &&
++	test_must_fail git push dst HEAD 2>err &&
++	test_i18ngrep "disallowed submodule path" err
++'
++
+ test_done
+-- 
+2.19.0.605.g01d371f741
+
