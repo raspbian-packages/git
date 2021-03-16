@@ -1,0 +1,7 @@
+#!/bin/sh
+set -e
+
+#DEBHELPER#
+
+test "$1" = configure || exit 0
+/usr/lib/emacsen-common/emacs-package-install git
