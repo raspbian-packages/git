@@ -201,6 +201,8 @@ struct dir_struct {
 	unsigned unmanaged_exclude_files;
 };
 
+struct dirent *readdir_skip_dot_and_dotdot(DIR *dirp);
+
 /*Count the number of slashes for string s*/
 extern int count_slashes(const char *s);
 
