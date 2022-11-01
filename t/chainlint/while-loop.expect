@@ -1,0 +1,11 @@
+(
+	while true
+	do
+		echo foo ?!AMP?!
+		cat <<-EOF ?!LOOP?!
+	done ?!AMP?!
+	while true; do
+		echo foo &&
+		cat bar ?!LOOP?!
+	done
+)
