@@ -1,0 +1,102 @@
+From 7e07103640f281a84bd55a267f79f0a005f3ea97 Mon Sep 17 00:00:00 2001
+From: Jeff King <peff@peff.net>
+Date: Wed, 11 Mar 2020 18:48:24 -0400
+Subject: fsck: detect gitmodules URLs with embedded newlines
+
+The credential protocol can't handle values with newlines. We already
+detect and block any such URLs from being used with credential helpers,
+but let's also add an fsck check to detect and block gitmodules files
+with such URLs. That will let us notice the problem earlier when
+transfer.fsckObjects is turned on. And in particular it will prevent bad
+objects from spreading, which may protect downstream users running older
+versions of Git.
+
+We'll file this under the existing gitmodulesUrl flag, which covers URLs
+with option injection. There's really no need to distinguish the exact
+flaw in the URL in this context. Likewise, I've expanded the description
+of t7416 to cover all types of bogus URLs.
+
+(cherry picked from commit 07259e74ec1237c836874342c65650bdee8a3993)
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ fsck.c                        | 16 +++++++++++++++-
+ t/t7416-submodule-dash-url.sh | 18 +++++++++++++++++-
+ 2 files changed, 32 insertions(+), 2 deletions(-)
+
+diff --git a/fsck.c b/fsck.c
+index 535f806c67..faac610a35 100644
+--- a/fsck.c
++++ b/fsck.c
+@@ -15,6 +15,7 @@
+ #include "packfile.h"
+ #include "submodule-config.h"
+ #include "config.h"
++#include "credential.h"
+ #include "help.h"
+ 
+ static struct oidset gitmodules_found = OIDSET_INIT;
+@@ -982,6 +983,19 @@ static int fsck_tag(struct tag *tag, const char *data,
+ 	return fsck_tag_buffer(tag, data, size, options);
+ }
+ 
++static int check_submodule_url(const char *url)
++{
++	struct credential c = CREDENTIAL_INIT;
++	int ret;
++
++	if (looks_like_command_line_option(url))
++		return -1;
++
++	ret = credential_from_url_gently(&c, url, 1);
++	credential_clear(&c);
++	return ret;
++}
++
+ struct fsck_gitmodules_data {
+ 	struct object *obj;
+ 	struct fsck_options *options;
+@@ -1006,7 +1020,7 @@ static int fsck_gitmodules_fn(const char *var, const char *value, void *vdata)
+ 				    "disallowed submodule name: %s",
+ 				    name);
+ 	if (!strcmp(key, "url") && value &&
+-	    looks_like_command_line_option(value))
++	    check_submodule_url(value) < 0)
+ 		data->ret |= report(data->options, data->obj,
+ 				    FSCK_MSG_GITMODULES_URL,
+ 				    "disallowed submodule url: %s",
+diff --git a/t/t7416-submodule-dash-url.sh b/t/t7416-submodule-dash-url.sh
+index 5ba041f537..41431b1ac3 100755
+--- a/t/t7416-submodule-dash-url.sh
++++ b/t/t7416-submodule-dash-url.sh
+@@ -1,6 +1,6 @@
+ #!/bin/sh
+ 
+-test_description='check handling of .gitmodule url with dash'
++test_description='check handling of disallowed .gitmodule urls'
+ . ./test-lib.sh
+ 
+ test_expect_success 'create submodule with protected dash in url' '
+@@ -60,4 +60,20 @@ test_expect_success 'trailing backslash is handled correctly' '
+ 	test_i18ngrep ! "unknown option" err
+ '
+ 
++test_expect_success 'fsck rejects embedded newline in url' '
++	# create an orphan branch to avoid existing .gitmodules objects
++	git checkout --orphan newline &&
++	cat >.gitmodules <<-\EOF &&
++	[submodule "foo"]
++	url = "https://one.example.com?%0ahost=two.example.com/foo.git"
++	EOF
++	git add .gitmodules &&
++	git commit -m "gitmodules with newline" &&
++	test_when_finished "rm -rf dst" &&
++	git init --bare dst &&
++	git -C dst config transfer.fsckObjects true &&
++	test_must_fail git push dst HEAD 2>err &&
++	grep gitmodulesUrl err
++'
++
+ test_done
+-- 
+2.26.0.292.g33ef6b2f38
+
