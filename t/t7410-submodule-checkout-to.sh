@@ -7,6 +7,7 @@ test_description='Combination of submodules and multiple workdirs'
 base_path=$(pwd -P)
 
 test_expect_success 'setup: make origin'  '
+	git config --global protocol.file.allow always &&
 	mkdir -p origin/sub &&
 	(
 		cd origin/sub && git init &&
