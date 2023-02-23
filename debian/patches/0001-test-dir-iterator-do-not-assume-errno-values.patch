@@ -1,0 +1,78 @@
+From 90421400977b3c80fdb8b887c61272a8f3ec0d18 Mon Sep 17 00:00:00 2001
+From: Junio C Hamano <gitster@pobox.com>
+Date: Tue, 30 Jul 2019 10:45:48 -0700
+Subject: [PATCH] test-dir-iterator: do not assume errno values
+
+A few tests printed 'errno' as an integer and compared with
+hardcoded integers; this is obviously not portable.
+
+A two things to note are:
+
+ - the string obtained by strerror() is not portable, and cannot be
+   used for the purpose of these tests.
+
+ - there unfortunately isn't a portable way to map error numbers to
+   error names.
+
+As we only care about a few selected errors, just map the error
+number to the name before emitting for comparison.
+
+Reported-by: Randall S. Becker <rsbecker@nexbridge.com>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+---
+ t/helper/test-dir-iterator.c | 11 ++++++++++-
+ t/t0066-dir-iterator.sh      |  4 ++--
+ 2 files changed, 12 insertions(+), 3 deletions(-)
+
+diff --git a/t/helper/test-dir-iterator.c b/t/helper/test-dir-iterator.c
+index a5b96cb0dc..c7c30664da 100644
+--- a/t/helper/test-dir-iterator.c
++++ b/t/helper/test-dir-iterator.c
+@@ -4,6 +4,15 @@
+ #include "iterator.h"
+ #include "dir-iterator.h"
+ 
++static const char *error_name(int error_number)
++{
++	switch (error_number) {
++	case ENOENT: return "ENOENT";
++	case ENOTDIR: return "ENOTDIR";
++	default: return "ESOMETHINGELSE";
++	}
++}
++
+ /*
+  * usage:
+  * tool-test dir-iterator [--follow-symlinks] [--pedantic] directory_path
+@@ -31,7 +40,7 @@ int cmd__dir_iterator(int argc, const char **argv)
+ 	diter = dir_iterator_begin(path.buf, flags);
+ 
+ 	if (!diter) {
+-		printf("dir_iterator_begin failure: %d\n", errno);
++		printf("dir_iterator_begin failure: %s\n", error_name(errno));
+ 		exit(EXIT_FAILURE);
+ 	}
+ 
+diff --git a/t/t0066-dir-iterator.sh b/t/t0066-dir-iterator.sh
+index 9354d3f1ed..92910e4e6c 100755
+--- a/t/t0066-dir-iterator.sh
++++ b/t/t0066-dir-iterator.sh
+@@ -55,13 +55,13 @@ test_expect_success 'dir-iterator should list files in the correct order' '
+ test_expect_success 'begin should fail upon inexistent paths' '
+ 	test_must_fail test-tool dir-iterator ./inexistent-path \
+ 		>actual-inexistent-path-output &&
+-	echo "dir_iterator_begin failure: 2" >expected-inexistent-path-output &&
++	echo "dir_iterator_begin failure: ENOENT" >expected-inexistent-path-output &&
+ 	test_cmp expected-inexistent-path-output actual-inexistent-path-output
+ '
+ 
+ test_expect_success 'begin should fail upon non directory paths' '
+ 	test_must_fail test-tool dir-iterator ./dir/b >actual-non-dir-output &&
+-	echo "dir_iterator_begin failure: 20" >expected-non-dir-output &&
++	echo "dir_iterator_begin failure: ENOTDIR" >expected-non-dir-output &&
+ 	test_cmp expected-non-dir-output actual-non-dir-output
+ '
+ 
+-- 
+2.30.2
+
