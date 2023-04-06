@@ -616,7 +616,7 @@ test_expect_success 'renaming to bogus section is rejected' '
 	test_must_fail git config --rename-section branch.zwei "bogus name"
 '
 
-test_expect_failure 'renaming a section with a long line' '
+test_expect_success 'renaming a section with a long line' '
 	{
 		printf "[b]\\n" &&
 		printf "  c = d %1024s [a] e = f\\n" " " &&
@@ -626,7 +626,7 @@ test_expect_failure 'renaming a section with a long line' '
 	test_must_fail git config -f y b.e
 '
 
-test_expect_failure 'renaming an embedded section with a long line' '
+test_expect_success 'renaming an embedded section with a long line' '
 	{
 		printf "[b]\\n" &&
 		printf "  c = d %1024s [a] [foo] e = f\\n" " " &&
