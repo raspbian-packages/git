@@ -1653,9 +1653,26 @@ int submodule_move_head(const char *path,
 			if (!submodule_uses_gitfile(path))
 				absorb_git_dir_into_superproject("", path,
 					ABSORB_GITDIR_RECURSE_SUBMODULES);
+			else {
+				char *dotgit = xstrfmt("%s/.git", path);
+				char *git_dir = xstrdup(read_gitfile(dotgit));
+
+				free(dotgit);
+				if (validate_submodule_git_dir(git_dir,
+							       sub->name) < 0)
+					die(_("refusing to create/use '%s' in "
+					      "another submodule's git dir"),
+					    git_dir);
+				free(git_dir);
+			}
 		} else {
 			char *gitdir = xstrfmt("%s/modules/%s",
 				    get_git_common_dir(), sub->name);
+			if (validate_submodule_git_dir(gitdir,
+						       sub->name) < 0)
+				die(_("refusing to create/use '%s' in another "
+				      "submodule's git dir"),
+				    gitdir);
 			connect_work_tree_and_git_dir(path, gitdir, 0);
 			free(gitdir);
 
