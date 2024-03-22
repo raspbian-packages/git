@@ -1657,6 +1657,28 @@ static int module_deinit(int argc, const char **argv, const char *prefix)
 	return 0;
 }
 
+static int dir_contains_only_dotgit(const char *path)
+{
+	DIR *dir = opendir(path);
+	struct dirent *e;
+	int ret = 1;
+
+	if (!dir)
+		return 0;
+
+	e = readdir_skip_dot_and_dotdot(dir);
+	if (!e)
+		ret = 0;
+	else if (strcmp(DEFAULT_GIT_DIR_ENVIRONMENT, e->d_name) ||
+		 (e = readdir_skip_dot_and_dotdot(dir))) {
+		error("unexpected item '%s' in '%s'", e->d_name, path);
+		ret = 0;
+	}
+
+	closedir(dir);
+	return ret;
+}
+
 static int clone_submodule(const char *path, const char *gitdir, const char *url,
 			   const char *depth, struct string_list *reference, int dissociate,
 			   int quiet, int progress, int single_branch)
@@ -1812,6 +1834,7 @@ static int module_clone(int argc, const char **argv, const char *prefix)
 	int dissociate = 0, require_init = 0;
 	char *sm_alternate = NULL, *error_strategy = NULL;
 	int single_branch = -1;
+	struct stat st;
 
 	struct option module_clone_options[] = {
 		OPT_STRING(0, "prefix", &prefix,
@@ -1874,6 +1897,10 @@ static int module_clone(int argc, const char **argv, const char *prefix)
 			"git dir"), sm_gitdir);
 
 	if (!file_exists(sm_gitdir)) {
+		if (require_init && !stat(path, &st) &&
+		    !is_empty_dir(path))
+			die(_("directory not empty: '%s'"), path);
+
 		if (safe_create_leading_directories_const(sm_gitdir) < 0)
 			die(_("could not create directory '%s'"), sm_gitdir);
 
@@ -1883,6 +1910,14 @@ static int module_clone(int argc, const char **argv, const char *prefix)
 				    quiet, progress, single_branch))
 			die(_("clone of '%s' into submodule path '%s' failed"),
 			    url, path);
+
+		if (require_init && !stat(path, &st) &&
+		    !dir_contains_only_dotgit(path)) {
+			char *dot_git = xstrfmt("%s/.git", path);
+			unlink(dot_git);
+			free(dot_git);
+			die(_("directory not empty: '%s'"), path);
+		}
 	} else {
 		if (require_init && !access(path, X_OK) && !is_empty_dir(path))
 			die(_("directory not empty: '%s'"), path);
