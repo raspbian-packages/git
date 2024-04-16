@@ -29,6 +29,16 @@ void fetch_objects(const char *remote_name, const struct object_id *oids,
 	struct ref *ref = NULL;
 	int i;
 
+	/* TODO: This should use NO_LAZY_FETCH_ENVIRONMENT */
+	if (git_env_bool("GIT_NO_LAZY_FETCH", 0)) {
+		static int warning_shown;
+		if (!warning_shown) {
+			warning_shown = 1;
+			warning(_("lazy fetching disabled; some objects may not be available"));
+		}
+		return -1;
+	}
+
 	for (i = 0; i < oid_nr; i++) {
 		struct ref *new_ref = alloc_ref(oid_to_hex(&oids[i]));
 		oidcpy(&new_ref->old_oid, &oids[i]);
