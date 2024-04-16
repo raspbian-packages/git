@@ -20,6 +20,16 @@ static int fetch_objects(const char *remote_name,
 	int i;
 	FILE *child_in;
 
+	/* TODO: This should use NO_LAZY_FETCH_ENVIRONMENT */
+	if (git_env_bool("GIT_NO_LAZY_FETCH", 0)) {
+		static int warning_shown;
+		if (!warning_shown) {
+			warning_shown = 1;
+			warning(_("lazy fetching disabled; some objects may not be available"));
+		}
+		return -1;
+	}
+
 	child.git_cmd = 1;
 	child.in = -1;
 	strvec_pushl(&child.args, "-c", "fetch.negotiationAlgorithm=noop",
