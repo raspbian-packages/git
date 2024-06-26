@@ -149,6 +149,7 @@ test_expect_success 'signed-tags=warn-strip' '
 
 test_expect_success 'setup submodule' '
 
+	test_config_global protocol.file.allow always &&
 	git checkout -f master &&
 	mkdir sub &&
 	(
@@ -174,6 +175,7 @@ test_expect_success 'setup submodule' '
 
 test_expect_success 'submodule fast-export | fast-import' '
 
+	test_config_global protocol.file.allow always &&
 	SUBENT1=$(git ls-tree master^ sub) &&
 	SUBENT2=$(git ls-tree master sub) &&
 	rm -rf new &&
