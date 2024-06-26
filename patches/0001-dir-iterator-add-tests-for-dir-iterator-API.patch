@@ -1,0 +1,165 @@
+From 150791adbf1eb432af0b895d81eef5c2717aa6cc Mon Sep 17 00:00:00 2001
+From: Daniel Ferreira <bnmvco@gmail.com>
+Date: Wed, 10 Jul 2019 20:58:57 -0300
+Subject: [PATCH] dir-iterator: add tests for dir-iterator API
+
+Create t/helper/test-dir-iterator.c, which prints relevant information
+about a directory tree iterated over with dir-iterator.
+
+Create t/t0066-dir-iterator.sh, which tests that dir-iterator does
+iterate through a whole directory tree as expected.
+
+Signed-off-by: Daniel Ferreira <bnmvco@gmail.com>
+[matheus.bernardino: update to use test-tool and some minor aesthetics]
+Helped-by: Matheus Tavares <matheus.bernardino@usp.br>
+Signed-off-by: Matheus Tavares <matheus.bernardino@usp.br>
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+---
+ Makefile                     |  1 +
+ t/helper/test-dir-iterator.c | 33 ++++++++++++++++++++++
+ t/helper/test-tool.c         |  1 +
+ t/helper/test-tool.h         |  1 +
+ t/t0066-dir-iterator.sh      | 55 ++++++++++++++++++++++++++++++++++++
+ 5 files changed, 91 insertions(+)
+ create mode 100644 t/helper/test-dir-iterator.c
+ create mode 100755 t/t0066-dir-iterator.sh
+
+diff --git a/Makefile b/Makefile
+index 8a7e235352..61df07f488 100644
+--- a/Makefile
++++ b/Makefile
+@@ -710,6 +710,7 @@ TEST_BUILTINS_OBJS += test-config.o
+ TEST_BUILTINS_OBJS += test-ctype.o
+ TEST_BUILTINS_OBJS += test-date.o
+ TEST_BUILTINS_OBJS += test-delta.o
++TEST_BUILTINS_OBJS += test-dir-iterator.o
+ TEST_BUILTINS_OBJS += test-drop-caches.o
+ TEST_BUILTINS_OBJS += test-dump-cache-tree.o
+ TEST_BUILTINS_OBJS += test-dump-fsmonitor.o
+diff --git a/t/helper/test-dir-iterator.c b/t/helper/test-dir-iterator.c
+new file mode 100644
+index 0000000000..84f50bed8c
+--- /dev/null
++++ b/t/helper/test-dir-iterator.c
+@@ -0,0 +1,33 @@
++#include "test-tool.h"
++#include "git-compat-util.h"
++#include "strbuf.h"
++#include "iterator.h"
++#include "dir-iterator.h"
++
++/* Argument is a directory path to iterate over */
++int cmd__dir_iterator(int argc, const char **argv)
++{
++	struct strbuf path = STRBUF_INIT;
++	struct dir_iterator *diter;
++
++	if (argc < 2)
++		die("BUG: test-dir-iterator needs one argument");
++
++	strbuf_add(&path, argv[1], strlen(argv[1]));
++
++	diter = dir_iterator_begin(path.buf);
++
++	while (dir_iterator_advance(diter) == ITER_OK) {
++		if (S_ISDIR(diter->st.st_mode))
++			printf("[d] ");
++		else if (S_ISREG(diter->st.st_mode))
++			printf("[f] ");
++		else
++			printf("[?] ");
++
++		printf("(%s) [%s] %s\n", diter->relative_path, diter->basename,
++		       diter->path.buf);
++	}
++
++	return 0;
++}
+diff --git a/t/helper/test-tool.c b/t/helper/test-tool.c
+index 087a8c0cc9..7bc9bb231e 100644
+--- a/t/helper/test-tool.c
++++ b/t/helper/test-tool.c
+@@ -19,6 +19,7 @@ static struct test_cmd cmds[] = {
+ 	{ "ctype", cmd__ctype },
+ 	{ "date", cmd__date },
+ 	{ "delta", cmd__delta },
++	{ "dir-iterator", cmd__dir_iterator },
+ 	{ "drop-caches", cmd__drop_caches },
+ 	{ "dump-cache-tree", cmd__dump_cache_tree },
+ 	{ "dump-fsmonitor", cmd__dump_fsmonitor },
+diff --git a/t/helper/test-tool.h b/t/helper/test-tool.h
+index 7e703f3038..ec0ffbd0cb 100644
+--- a/t/helper/test-tool.h
++++ b/t/helper/test-tool.h
+@@ -9,6 +9,7 @@ int cmd__config(int argc, const char **argv);
+ int cmd__ctype(int argc, const char **argv);
+ int cmd__date(int argc, const char **argv);
+ int cmd__delta(int argc, const char **argv);
++int cmd__dir_iterator(int argc, const char **argv);
+ int cmd__drop_caches(int argc, const char **argv);
+ int cmd__dump_cache_tree(int argc, const char **argv);
+ int cmd__dump_fsmonitor(int argc, const char **argv);
+diff --git a/t/t0066-dir-iterator.sh b/t/t0066-dir-iterator.sh
+new file mode 100755
+index 0000000000..59bce868f4
+--- /dev/null
++++ b/t/t0066-dir-iterator.sh
+@@ -0,0 +1,55 @@
++#!/bin/sh
++
++test_description='Test the dir-iterator functionality'
++
++. ./test-lib.sh
++
++test_expect_success 'setup' '
++	mkdir -p dir &&
++	mkdir -p dir/a/b/c/ &&
++	>dir/b &&
++	>dir/c &&
++	mkdir -p dir/d/e/d/ &&
++	>dir/a/b/c/d &&
++	>dir/a/e &&
++	>dir/d/e/d/a &&
++
++	mkdir -p dir2/a/b/c/ &&
++	>dir2/a/b/c/d
++'
++
++test_expect_success 'dir-iterator should iterate through all files' '
++	cat >expected-iteration-sorted-output <<-EOF &&
++	[d] (a) [a] ./dir/a
++	[d] (a/b) [b] ./dir/a/b
++	[d] (a/b/c) [c] ./dir/a/b/c
++	[d] (d) [d] ./dir/d
++	[d] (d/e) [e] ./dir/d/e
++	[d] (d/e/d) [d] ./dir/d/e/d
++	[f] (a/b/c/d) [d] ./dir/a/b/c/d
++	[f] (a/e) [e] ./dir/a/e
++	[f] (b) [b] ./dir/b
++	[f] (c) [c] ./dir/c
++	[f] (d/e/d/a) [a] ./dir/d/e/d/a
++	EOF
++
++	test-tool dir-iterator ./dir >out &&
++	sort out >./actual-iteration-sorted-output &&
++
++	test_cmp expected-iteration-sorted-output actual-iteration-sorted-output
++'
++
++test_expect_success 'dir-iterator should list files in the correct order' '
++	cat >expected-pre-order-output <<-EOF &&
++	[d] (a) [a] ./dir2/a
++	[d] (a/b) [b] ./dir2/a/b
++	[d] (a/b/c) [c] ./dir2/a/b/c
++	[f] (a/b/c/d) [d] ./dir2/a/b/c/d
++	EOF
++
++	test-tool dir-iterator ./dir2 >actual-pre-order-output &&
++
++	test_cmp expected-pre-order-output actual-pre-order-output
++'
++
++test_done
+-- 
+2.30.2
+

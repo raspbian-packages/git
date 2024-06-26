@@ -1,0 +1,43 @@
+From 01ed1c21ca44db1296812acaae55cb186897ae0d Mon Sep 17 00:00:00 2001
+From: Jonathan Nieder <jrnieder@gmail.com>
+Date: Sun, 19 Apr 2020 16:28:57 -0700
+Subject: Git 2.20.4
+
+This merges up the security fix from v2.17.5.
+
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+(cherry picked from commit 041bc65923e13313ca1b77681c3b2950b5e0a163)
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ Documentation/RelNotes/2.20.4.txt | 5 +++++
+ GIT-VERSION-GEN                   | 2 +-
+ 2 files changed, 6 insertions(+), 1 deletion(-)
+ create mode 100644 Documentation/RelNotes/2.20.4.txt
+
+diff --git a/Documentation/RelNotes/2.20.4.txt b/Documentation/RelNotes/2.20.4.txt
+new file mode 100644
+index 00000000000..5a9e24e4709
+--- /dev/null
++++ b/Documentation/RelNotes/2.20.4.txt
+@@ -0,0 +1,5 @@
++Git v2.20.4 Release Notes
++=========================
++
++This release merges the security fix that appears in v2.17.5; see
++the release notes for that version for details.
+diff --git a/GIT-VERSION-GEN b/GIT-VERSION-GEN
+index 1482b4d75f4..de22ee7afad 100755
+--- a/GIT-VERSION-GEN
++++ b/GIT-VERSION-GEN
+@@ -1,7 +1,7 @@
+ #!/bin/sh
+ 
+ GVF=GIT-VERSION-FILE
+-DEF_VER=v2.20.3
++DEF_VER=v2.20.4
+ 
+ LF='
+ '
+-- 
+2.26.1.301.g55bc3eb7cb9
+

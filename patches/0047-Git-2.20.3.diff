@@ -1,0 +1,41 @@
+From be0a1785e78fc2ce1ebdbb9039ec274a8a7ca53e Mon Sep 17 00:00:00 2001
+From: Junio C Hamano <gitster@pobox.com>
+Date: Tue, 17 Mar 2020 13:42:38 -0700
+Subject: Git 2.20.3
+
+Signed-off-by: Junio C Hamano <gitster@pobox.com>
+(cherry picked from commit d1259ce117d0714f1441956805612fb36d7ce7f8)
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ Documentation/RelNotes/2.20.3.txt | 5 +++++
+ GIT-VERSION-GEN                   | 2 +-
+ 2 files changed, 6 insertions(+), 1 deletion(-)
+ create mode 100644 Documentation/RelNotes/2.20.3.txt
+
+diff --git a/Documentation/RelNotes/2.20.3.txt b/Documentation/RelNotes/2.20.3.txt
+new file mode 100644
+index 0000000000..f6eccd103b
+--- /dev/null
++++ b/Documentation/RelNotes/2.20.3.txt
+@@ -0,0 +1,5 @@
++Git v2.20.3 Release Notes
++=========================
++
++This release merges the security fix that appears in v2.17.4; see
++the release notes for that version for details.
+diff --git a/GIT-VERSION-GEN b/GIT-VERSION-GEN
+index 492f3480f0..1482b4d75f 100755
+--- a/GIT-VERSION-GEN
++++ b/GIT-VERSION-GEN
+@@ -1,7 +1,7 @@
+ #!/bin/sh
+ 
+ GVF=GIT-VERSION-FILE
+-DEF_VER=v2.20.2
++DEF_VER=v2.20.3
+ 
+ LF='
+ '
+-- 
+2.26.0.292.g33ef6b2f38
+
