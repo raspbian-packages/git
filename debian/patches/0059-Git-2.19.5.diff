@@ -1,0 +1,29 @@
+From 5c02b7802c36cee447aaa72825d72514d6e23ec3 Mon Sep 17 00:00:00 2001
+From: Jonathan Nieder <jrnieder@gmail.com>
+Date: Sun, 19 Apr 2020 16:26:41 -0700
+Subject: Git 2.19.5
+
+This merges up the security fix from v2.17.5.
+
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+(cherry picked from commit 76b54ee9b9944ee70422ac24884f78769cf264f1)
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ Documentation/RelNotes/2.19.5.txt | 5 +++++
+ 1 file changed, 5 insertions(+)
+ create mode 100644 Documentation/RelNotes/2.19.5.txt
+
+diff --git a/Documentation/RelNotes/2.19.5.txt b/Documentation/RelNotes/2.19.5.txt
+new file mode 100644
+index 00000000000..18a4dcbfd6a
+--- /dev/null
++++ b/Documentation/RelNotes/2.19.5.txt
+@@ -0,0 +1,5 @@
++Git v2.19.5 Release Notes
++=========================
++
++This release merges the security fix that appears in v2.17.5; see
++the release notes for that version for details.
+-- 
+2.26.1.301.g55bc3eb7cb9
+
