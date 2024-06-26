@@ -1102,7 +1102,7 @@ const char *setup_git_directory_gently(int *nongit_ok)
 {
 	static struct strbuf cwd = STRBUF_INIT;
 	struct strbuf dir = STRBUF_INIT, gitdir = STRBUF_INIT;
-	const char *prefix;
+	const char *prefix = NULL;
 	struct repository_format repo_fmt;
 
 	/*
