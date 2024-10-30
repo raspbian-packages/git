@@ -12,6 +12,7 @@ void credential_init(struct credential *c)
 {
 	memset(c, 0, sizeof(*c));
 	c->helpers.strdup_strings = 1;
+	c->sanitize_prompt = 1;
 }
 
 void credential_clear(struct credential *c)
@@ -66,6 +67,8 @@ static int credential_config_callback(const char *var, const char *value,
 	}
 	else if (!strcmp(key, "usehttppath"))
 		c->use_http_path = git_config_bool(var, value);
+	else if (!strcmp(key, "sanitizeprompt"))
+		c->sanitize_prompt = git_config_bool(var, value);
 
 	return 0;
 }
@@ -176,7 +179,10 @@ static char *credential_ask_one(const char *what, struct credential *c,
 	struct strbuf prompt = STRBUF_INIT;
 	char *r;
 
-	credential_describe(c, &desc);
+	if (c->sanitize_prompt)
+		credential_format(c, &desc);
+	else
+		credential_describe(c, &desc);
 	if (desc.len)
 		strbuf_addf(&prompt, "%s for '%s': ", what, desc.buf);
 	else

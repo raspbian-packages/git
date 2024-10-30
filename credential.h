@@ -119,7 +119,8 @@ struct credential {
 		 configured:1,
 		 quit:1,
 		 use_http_path:1,
-		 username_from_proto:1;
+		 username_from_proto:1,
+		 sanitize_prompt:1;
 
 	char *username;
 	char *password;
@@ -128,7 +129,10 @@ struct credential {
 	char *path;
 };
 
-#define CREDENTIAL_INIT { STRING_LIST_INIT_DUP }
+#define CREDENTIAL_INIT { \
+	.helpers = STRING_LIST_INIT_DUP, \
+	.sanitize_prompt = 1, \
+}
 
 /* Initialize a credential structure, setting all fields to empty. */
 void credential_init(struct credential *);
