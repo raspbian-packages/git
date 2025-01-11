@@ -1,0 +1,3 @@
+credential_format-also-encode-host-port.patch
+credential-sanitize-the-user-prompt.patch
+credential-disallow-Carriage-Returns-in-the-protocol.patch
