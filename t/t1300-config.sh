@@ -2088,4 +2088,15 @@ test_expect_success '--get and --get-all with --fixed-value' '
 	test_must_fail git config --file=config --get-regexp --fixed-value fixed+ non-existent
 '
 
+test_expect_success 'writing value with trailing CR not stripped on read' '
+	test_when_finished "rm -rf cr-test" &&
+
+	printf "bar\r\n" >expect &&
+	git init cr-test &&
+	git -C cr-test config core.foo $(printf "bar\r") &&
+	git -C cr-test config core.foo >actual &&
+
+	test_cmp expect actual
+'
+
 test_done
