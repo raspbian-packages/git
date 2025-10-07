@@ -1,0 +1,7 @@
+credential_format-also-encode-host-port.patch
+credential-sanitize-the-user-prompt.patch
+credential-disallow-Carriage-Returns-in-the-protocol.patch
+CVE-2025-27613.patch
+CVE-2025-46835.patch
+CVE-2025-48384.patch
+CVE-2025-48385.patch
